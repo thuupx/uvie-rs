@@ -6,6 +6,10 @@ edition = "2024"
 [dependencies]
 heapless = { version = "0.8", optional = true }
 
+[dev-dependencies]
+criterion = "0.5"
+vi = "0.8"
+
 [features]
 default = ["std"]
 std = []
@@ -15,3 +19,7 @@ heapless = ["dep:heapless"]
 name = "uvie"
 path = "src/main.rs"
 required-features = ["std"]
+
+[[bench]]
+name = "perf"
+harness = false

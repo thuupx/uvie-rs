@@ -20,6 +20,11 @@ impl UltraFastViEngine {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.raw_buffer.clear();
+        self.out_buffer.clear();
+    }
+
     pub fn set_input_method(&mut self, method: InputMethod) {
         self.input_method = method;
         self.mode = mode_for(method);
