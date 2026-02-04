@@ -6,26 +6,24 @@ A really fast Vietnamese input method engine in Rust.
 
 Benchmarks (`cargo bench`) usually put `uvie` in the **ns → low µs** range per sequence.
 
-- **`ns`** = nanoseconds, **`µs`** = microseconds (1 µs = 1000 ns)
+### Why it’s fast:
 
-Why it’s fast:
-
-- **Zero allocation** (No String allocations)
-- **Modern algorithms** (no extra scans, no extra passes)
-- **Small fixed buffers** (cache-friendly, predictable)
-- **Table lookups & bitmasks** instead of big branchy code
-- **Minimal allocation** (optional `heapless` mode)
-
-- Supports **Telex** and **VNI** input methods.
-- Optimized for tight loops (fixed-size buffers, table-driven mappings).
-- Can be built in a heapless-friendly configuration for embedded/low-resource environments.
+- Minimal allocation (fixed small buffers; optional `heapless` mode)
+- Single-pass transforms (no extra scans / passes)
+- Small fixed-capacity buffers (cache-friendly, predictable)
+- CPU-friendly control flow: reduce unpredictable branches to lower branch-misprediction stalls
+- Branch-reduction techniques: table lookups, bitmasks, and “branchless” selection patterns instead of large `match/if` ladders
+- O(1) query-time operations for the core lookup/transform steps
+- Optimized for tight loops.
 
 ## Features
 
+- Supports **Telex** and **VNI** input methods.
 - **Easy to use**: simple API, no dependencies, easy to embed, extensible.
 - **Default (`std`)**: normal Rust `String` buffers.
 - **`heapless`**: uses fixed-capacity `heapless::String` buffers (no heap allocation from the engine itself).
-
+- Can be built in a heapless-friendly configuration for embedded devices, low-resources environments.
+  
 > Note: in `heapless` mode, if internal buffers overflow, output may be truncated.
 
 ## How to use
@@ -65,13 +63,6 @@ for ch in "viet65".chars() {
 assert_eq!(e.feed(' '), "việt ");
 ```
 
-CLI demo:
-
-```bash
-cargo run -- --mode telex
-cargo run -- --mode vni
-```
-
 Embedded/heapless check:
 
 ```bash
@@ -89,7 +80,7 @@ cargo run -- --mode vni
 
 Controls:
 
-- Press `Enter` to flush (it feeds a space)
+- Press `Enter` to flush
 - Press `Ctrl+C` to exit
 
 ## Benchmarks (uvie vs vi)
@@ -100,7 +91,7 @@ Benchmarks use `criterion`.
 cargo bench
 ```
 
-`cargo bench` runs benchmarks in the `bench` profile (optimized / release-like version).
+`cargo bench` runs benchmarks in the `bench` profile (release target).
 
 The benchmark file is in `benches/perf.rs` and currently benchmarks:
 
