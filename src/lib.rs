@@ -7,31 +7,36 @@ mod tests;
 
 pub struct UltraFastViEngine {
     raw_buffer: String,
+    out_buffer: String,
 }
 
 impl UltraFastViEngine {
     pub fn new() -> Self {
         Self {
             raw_buffer: String::with_capacity(32),
+            out_buffer: String::with_capacity(64),
         }
     }
 
-    pub fn feed(&mut self, key: char) -> String {
+    pub fn feed(&mut self, key: char) -> &str {
         if key.is_whitespace() {
-            let res = self.render();
+            self.render_str();
             self.raw_buffer.clear();
-            return format!("{}{}", res, key);
+            self.out_buffer.push(key);
+            return &self.out_buffer;
         }
         self.raw_buffer.push(key.to_ascii_lowercase());
-        self.render()
+        self.render_str()
     }
 
-    fn render(&self) -> String {
+    fn render_str(&mut self) -> &str {
         if self.raw_buffer.is_empty() {
-            return String::new();
+            self.out_buffer.clear();
+            return &self.out_buffer;
         }
 
-        let bytes = self.raw_buffer.as_bytes();
+        let bytes_all = self.raw_buffer.as_bytes();
+        let bytes = &bytes_all[..bytes_all.len().min(32)];
         let mut processed = [0u8; 32];
         let mut p_len = 0;
         let mut last_tone_char = 0u8;
@@ -44,10 +49,8 @@ impl UltraFastViEngine {
             if is_tone {
                 // Rule 1: First character is always treated as consonant/content
                 if idx == 0 {
-                    if p_len < 32 {
-                        processed[p_len] = b;
-                        p_len += 1;
-                    }
+                    processed[p_len] = b;
+                    p_len += 1;
                     continue;
                 }
 
@@ -57,20 +60,16 @@ impl UltraFastViEngine {
                 if b == b'r' && idx > 0 {
                     let prev = bytes[idx - 1];
                     if matches!(prev, b't' | b'p' | b'f' | b'c' | b'b' | b'd' | b'g' | b'k') {
-                        if p_len < 32 {
-                            processed[p_len] = b;
-                            p_len += 1;
-                        }
+                        processed[p_len] = b;
+                        p_len += 1;
                         continue;
                     }
                 }
 
                 last_tone_char = b;
             } else {
-                if p_len < 32 {
-                    processed[p_len] = b;
-                    p_len += 1;
-                }
+                processed[p_len] = b;
+                p_len += 1;
             }
         }
 
@@ -106,30 +105,37 @@ impl UltraFastViEngine {
         // 1.6. Retroactive 'w' bubbling
         // If we see 'w', bubble it leftwards until it hits a char it can modify (a, o, u, d)
         for k in 0..t_len {
-            if toggled[k] == b'w' {
-                // Check if there is a valid target to the left
-                let mut has_target = false;
-                for j in (0..k).rev() {
-                    if is_w_target(toggled[j]) {
-                        has_target = true;
-                        break;
-                    }
-                }
+            if toggled[k] != b'w' || k == 0 {
+                continue;
+            }
 
-                if has_target {
-                    let mut cur = k;
-                    while cur > 0 {
-                        let prev = toggled[cur - 1];
-                        if is_w_target(prev) {
-                            break;
-                        }
-                        // Swap
-                        toggled[cur] = prev;
-                        toggled[cur - 1] = b'w';
-                        cur -= 1;
-                    }
+            // Find nearest valid target to the left. If none, don't move.
+            let mut target_pos: Option<usize> = None;
+            for j in (0..k).rev() {
+                if is_w_target(toggled[j]) {
+                    target_pos = Some(j);
+                    break;
                 }
             }
+
+            let Some(tp) = target_pos else {
+                continue;
+            };
+
+            // If already right after target, nothing to do.
+            if tp + 1 == k {
+                continue;
+            }
+
+            // Move this 'w' to position tp+1 by shifting the intervening bytes right by 1.
+            // This matches the swap-based bubbling but with fewer branches.
+            let w = toggled[k];
+            let mut i = k;
+            while i > tp + 1 {
+                toggled[i] = toggled[i - 1];
+                i -= 1;
+            }
+            toggled[tp + 1] = w;
         }
 
         // 2. Resolve Telex & Build Char Buffer
@@ -197,7 +203,9 @@ impl UltraFastViEngine {
                 // If invalid, fallback to raw buffer
                 // But wait, raw buffer might be different from char_buf without tone.
                 // Actually if we return raw_buffer here, we return the whole string including the tone key at the end/position.
-                return self.raw_buffer.clone();
+                self.out_buffer.clear();
+                self.out_buffer.push_str(&self.raw_buffer);
+                return &self.out_buffer;
             }
         }
 
@@ -208,7 +216,11 @@ impl UltraFastViEngine {
             self.apply_tone_in_place(&mut char_buf[..c_len], vowel_mask, tone_id);
         }
 
-        char_buf[..c_len].iter().collect()
+        self.out_buffer.clear();
+        for &c in &char_buf[..c_len] {
+            self.out_buffer.push(c);
+        }
+        &self.out_buffer
     }
 
     fn is_invalid_vietnamese_chars(&self, chars: &[char], vowel_mask: u16) -> bool {
@@ -218,12 +230,27 @@ impl UltraFastViEngine {
             return chars.len() > 1;
         }
 
-        // Simple string checks on chars
-        // "ou" check:
-        for i in 0..chars.len().saturating_sub(1) {
-            if chars[i] == 'o' && chars[i + 1] == 'u' {
-                return true;
+        // Bitmask-based adjacency checks (still overall O(n) to build masks, but O(1) to query patterns).
+        // We limit masks to the first 32 chars (engine buffers are capped at 32).
+        let mut mask_o: u32 = 0;
+        let mut mask_u: u32 = 0;
+        let mut idx: u32 = 0;
+        for &c in chars.iter() {
+            if idx >= 32 {
+                break;
             }
+            // Only care about ASCII 'o'/'u' here.
+            if c == 'o' {
+                mask_o |= 1u32 << idx;
+            } else if c == 'u' {
+                mask_u |= 1u32 << idx;
+            }
+            idx += 1;
+        }
+
+        // "ou" check: any position i with 'o' and i+1 with 'u'
+        if (mask_o & (mask_u >> 1)) != 0 {
+            return true;
         }
 
         let first_vowel_pos = vowel_mask.trailing_zeros() as usize;
@@ -241,37 +268,73 @@ impl UltraFastViEngine {
 
         // Check specific invalid clusters of length 2
         if first_vowel_pos == 2 {
-            let c1 = chars[0];
-            let c2 = chars[1];
-            // Check against: cl, fl, bl, gl, sl, pl, br, pr, dr, st, sp, sk
-            match (c1, c2) {
-                ('c', 'l')
-                | ('f', 'l')
-                | ('b', 'l')
-                | ('g', 'l')
-                | ('s', 'l')
-                | ('p', 'l')
-                | ('b', 'r')
-                | ('p', 'r')
-                | ('d', 'r')
-                | ('f', 'r')
-                | ('g', 'r')
-                | ('k', 'r')
-                | ('s', 't')
-                | ('s', 'p')
-                | ('s', 'k')
-                | ('p', 't')
-                // | ('p', 'h') // ph is valid (pho, pha)
-                | ('p', 'c')
-                | ('p', 'g')
-                | ('p', 'q')
-                | ('p', 's')
-                | ('p', 'k')
-                | ('p', 'd')
-                | ('p', 'f')
-                | ('p', 'b')
-                => return true,
-                _ => {}
+            // Pack the first two chars into a u16 to match quickly.
+            // Only apply this fast-path to ASCII; otherwise fall back to the previous tuple match semantics.
+            let c1 = chars[0] as u32;
+            let c2 = chars[1] as u32;
+            if c1 <= 0x7F && c2 <= 0x7F {
+                let pair = ((c1 as u16) << 8) | (c2 as u16);
+                // Check against: cl, fl, bl, gl, sl, pl, br, pr, dr, st, sp, sk, and p* disallow list.
+                // Note: "ph" is intentionally not included (valid).
+                match pair {
+                    0x636C // cl
+                    | 0x666C // fl
+                    | 0x626C // bl
+                    | 0x676C // gl
+                    | 0x736C // sl
+                    | 0x706C // pl
+                    | 0x6272 // br
+                    | 0x7072 // pr
+                    | 0x6472 // dr
+                    | 0x6672 // fr
+                    | 0x6772 // gr
+                    | 0x6B72 // kr
+                    | 0x7374 // st
+                    | 0x7370 // sp
+                    | 0x736B // sk
+                    | 0x7074 // pt
+                    | 0x7063 // pc
+                    | 0x7067 // pg
+                    | 0x7071 // pq
+                    | 0x7073 // ps
+                    | 0x706B // pk
+                    | 0x7064 // pd
+                    | 0x7066 // pf
+                    | 0x7062 // pb
+                    => return true,
+                    _ => {}
+                }
+            } else {
+                // Fallback (non-ASCII)
+                let c1 = chars[0];
+                let c2 = chars[1];
+                match (c1, c2) {
+                    ('c', 'l')
+                    | ('f', 'l')
+                    | ('b', 'l')
+                    | ('g', 'l')
+                    | ('s', 'l')
+                    | ('p', 'l')
+                    | ('b', 'r')
+                    | ('p', 'r')
+                    | ('d', 'r')
+                    | ('f', 'r')
+                    | ('g', 'r')
+                    | ('k', 'r')
+                    | ('s', 't')
+                    | ('s', 'p')
+                    | ('s', 'k')
+                    | ('p', 't')
+                    | ('p', 'c')
+                    | ('p', 'g')
+                    | ('p', 'q')
+                    | ('p', 's')
+                    | ('p', 'k')
+                    | ('p', 'd')
+                    | ('p', 'f')
+                    | ('p', 'b') => return true,
+                    _ => {}
+                }
             }
         }
 
@@ -352,31 +415,59 @@ impl UltraFastViEngine {
 // Helpers
 #[inline(always)]
 fn classify(b: u8) -> u8 {
-    match b {
-        b'a' | b'e' | b'o' | b'u' | b'i' | b'y' => IS_VOWEL,
-        b'w' | b'd' => IS_MODIFIER,
-        b's' | b'f' | b'r' | b'x' | b'j' | b'z' => IS_TONE_KEY,
-        _ => 0,
-    }
+    CLASSIFY_TABLE[b as usize]
 }
 
 #[inline(always)]
 fn is_w_target(b: u8) -> bool {
-    matches!(b, b'a' | b'o' | b'u' | b'd')
+    W_TARGET_TABLE[b as usize]
 }
 
 #[inline(always)]
 fn map_tone(b: u8) -> u8 {
-    match b {
-        b's' => 1,
-        b'f' => 2,
-        b'r' => 3,
-        b'x' => 4,
-        b'j' => 5,
-        b'z' => 0,
-        _ => 0,
-    }
+    TONE_TABLE[b as usize]
 }
+
+const CLASSIFY_TABLE: [u8; 256] = {
+    let mut t = [0u8; 256];
+    t[b'a' as usize] = IS_VOWEL;
+    t[b'e' as usize] = IS_VOWEL;
+    t[b'o' as usize] = IS_VOWEL;
+    t[b'u' as usize] = IS_VOWEL;
+    t[b'i' as usize] = IS_VOWEL;
+    t[b'y' as usize] = IS_VOWEL;
+
+    t[b'w' as usize] = IS_MODIFIER;
+    t[b'd' as usize] = IS_MODIFIER;
+
+    t[b's' as usize] = IS_TONE_KEY;
+    t[b'f' as usize] = IS_TONE_KEY;
+    t[b'r' as usize] = IS_TONE_KEY;
+    t[b'x' as usize] = IS_TONE_KEY;
+    t[b'j' as usize] = IS_TONE_KEY;
+    t[b'z' as usize] = IS_TONE_KEY;
+    t
+};
+
+const W_TARGET_TABLE: [bool; 256] = {
+    let mut t = [false; 256];
+    t[b'a' as usize] = true;
+    t[b'o' as usize] = true;
+    t[b'u' as usize] = true;
+    t[b'd' as usize] = true;
+    t
+};
+
+const TONE_TABLE: [u8; 256] = {
+    let mut t = [0u8; 256];
+    t[b's' as usize] = 1;
+    t[b'f' as usize] = 2;
+    t[b'r' as usize] = 3;
+    t[b'x' as usize] = 4;
+    t[b'j' as usize] = 5;
+    t[b'z' as usize] = 0;
+    t
+};
 
 #[inline(always)]
 fn resolve_telex(curr: u8, next: Option<u8>) -> (char, bool) {
@@ -395,7 +486,10 @@ fn resolve_telex(curr: u8, next: Option<u8>) -> (char, bool) {
 
 #[inline(always)]
 fn is_vowel_unicode(c: char) -> bool {
-    "aeiouyâêôăơư".contains(c)
+    matches!(
+        c,
+        'a' | 'e' | 'i' | 'o' | 'u' | 'y' | 'â' | 'ê' | 'ô' | 'ă' | 'ơ' | 'ư'
+    )
 }
 
 fn map_vowel_with_tone(c: char, tone: u8) -> char {

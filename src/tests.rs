@@ -3,7 +3,7 @@ use crate::UltraFastViEngine;
 fn type_seq(engine: &mut UltraFastViEngine, seq: &str) -> String {
     let mut out = String::new();
     for c in seq.chars() {
-        out = engine.feed(c);
+        out = engine.feed(c).to_string();
     }
     out
 }
