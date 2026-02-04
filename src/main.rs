@@ -1,9 +1,8 @@
 use std::io::{self, Read};
-use uvie::{ UltraFastViEngine};
+use uvie::UltraFastViEngine;
 
 fn main() {
     let mut engine = UltraFastViEngine::new();
-        // .with_corrector(SmartCorrector);
     let mut stdin = io::stdin().lock();
 
     let mut buf = [0u8; 1];
