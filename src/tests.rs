@@ -257,6 +257,13 @@ fn regression_pho_validity() {
 }
 
 #[test]
+fn regression_ui_tone_on_first_vowel() {
+    let mut e = UltraFastViEngine::new();
+    // guiwr -> gửi (tone on ư, not on i)
+    assert_eq!(type_seq(&mut e, "guiwr"), "gửi");
+}
+
+#[test]
 fn vni_basic_modifiers() {
     assert_eq!(type_seq_vni("a6"), "â");
     assert_eq!(type_seq_vni("a8"), "ă");

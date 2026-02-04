@@ -336,6 +336,13 @@ impl UltraFastViEngine {
                 let f = chars.get(first).copied().unwrap_or('\0');
                 let sc = chars.get(second).copied().unwrap_or('\0');
 
+                // Special case: ui/ưi (e.g. "túi", "gửi") place tone on the first vowel.
+                // Without this, tone is incorrectly applied to 'i' (e.g. "gưỉ").
+                // Exception: in "qu" prefix, 'u' is a glide, so tone belongs to the following vowel (e.g. "quỉ").
+                let mut prefer_first = (f == 'u' || f == 'ư') && sc == 'i';
+
+                // Standard open pairs that often prefer tone on the first vowel.
+                // EXCLUDED pairs prefer tone on second vowel.
                 let mut is_open_pair = (f == 'i' && (sc == 'a' || sc == 'u'))
                     || (f == 'u' && (sc == 'a' || sc == 'e'))
                     || (f == 'ư' && (sc == 'a' || sc == 'u'))
@@ -345,21 +352,28 @@ impl UltraFastViEngine {
                     || (f == 'o' && sc == 'i')
                     || (f == 'â' && (sc == 'y' || sc == 'u'));
 
-                if is_open_pair {
-                    if chars.len() >= 2 {
-                        let p0 = chars[0];
-                        let p1 = chars[1];
+                // Exception: "qu" and "gi" logic
+                // If starts with "qu" -> u is glide, tone on next vowel
+                // If starts with "gi" -> i is consonant part, tone on next vowel
+                if chars.len() >= 2 {
+                    let p0 = chars[0];
+                    let p1 = chars[1];
 
-                        if (p0 == 'q' || p0 == 'Q') && (p1 == 'u' || p1 == 'U') && first == 1 {
-                            is_open_pair = false;
-                        } else if (p0 == 'g' || p0 == 'G') && (p1 == 'i' || p1 == 'I') && first == 1
-                        {
-                            is_open_pair = false;
-                        }
+                    if (p0 == 'q' || p0 == 'Q') && (p1 == 'u' || p1 == 'U') && first == 1 {
+                        is_open_pair = false;
+                        prefer_first = false;
+                    } else if (p0 == 'g' || p0 == 'G')
+                        && (p1 == 'i' || p1 == 'I')
+                        && first == 1
+                    {
+                        is_open_pair = false;
+                        prefer_first = false;
                     }
                 }
 
-                if is_open_pair {
+                if prefer_first {
+                    first
+                } else if is_open_pair {
                     let has_coda = (second + 1) < chars.len();
                     if has_coda { second } else { first }
                 } else {
