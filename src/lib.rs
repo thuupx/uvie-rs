@@ -1,20 +1,39 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 const IS_VOWEL: u8 = 1 << 0;
 const IS_MODIFIER: u8 = 1 << 1;
 const IS_TONE_KEY: u8 = 1 << 2; // Keys: s, f, r, x, j, z
+
+#[cfg(feature = "heapless")]
+type RawBuffer = heapless::String<32>;
+
+#[cfg(feature = "heapless")]
+type OutBuffer = heapless::String<128>;
+
+#[cfg(not(feature = "heapless"))]
+type RawBuffer = String;
+
+#[cfg(not(feature = "heapless"))]
+type OutBuffer = String;
+
+#[cfg(all(not(feature = "std"), not(feature = "heapless")))]
+compile_error!(
+    "no_std build requires `heapless` feature (use --no-default-features --features heapless)"
+);
 
 #[cfg(test)]
 mod tests;
 
 pub struct UltraFastViEngine {
-    raw_buffer: String,
-    out_buffer: String,
+    raw_buffer: RawBuffer,
+    out_buffer: OutBuffer,
 }
 
 impl UltraFastViEngine {
     pub fn new() -> Self {
         Self {
-            raw_buffer: String::with_capacity(32),
-            out_buffer: String::with_capacity(64),
+            raw_buffer: new_raw_buffer(),
+            out_buffer: new_out_buffer(),
         }
     }
 
@@ -22,10 +41,10 @@ impl UltraFastViEngine {
         if key.is_whitespace() {
             self.render_str();
             self.raw_buffer.clear();
-            self.out_buffer.push(key);
+            let _ = self.out_buffer.push(key);
             return &self.out_buffer;
         }
-        self.raw_buffer.push(key.to_ascii_lowercase());
+        let _ = self.raw_buffer.push(key.to_ascii_lowercase());
         self.render_str()
     }
 
@@ -102,40 +121,43 @@ impl UltraFastViEngine {
             i += 1;
         }
 
-        // 1.6. Retroactive 'w' bubbling
+        // 1.6. Retroactive 'w' bubbling (single-pass insertion)
         // If we see 'w', bubble it leftwards until it hits a char it can modify (a, o, u, d)
-        for k in 0..t_len {
-            if toggled[k] != b'w' || k == 0 {
-                continue;
-            }
+        {
+            let mut bubbled = [0u8; 32];
+            let mut b_len = 0usize;
+            let mut last_target_pos: Option<usize> = None;
 
-            // Find nearest valid target to the left. If none, don't move.
-            let mut target_pos: Option<usize> = None;
-            for j in (0..k).rev() {
-                if is_w_target(toggled[j]) {
-                    target_pos = Some(j);
-                    break;
+            for k in 0..t_len {
+                let c = toggled[k];
+                if c == b'w' {
+                    if let Some(tp) = last_target_pos {
+                        if b_len < 32 {
+                            let mut i = b_len;
+                            while i > tp + 1 {
+                                bubbled[i] = bubbled[i - 1];
+                                i -= 1;
+                            }
+                            bubbled[tp + 1] = b'w';
+                            b_len += 1;
+                        }
+                    } else {
+                        if b_len < 32 {
+                            bubbled[b_len] = b'w';
+                            b_len += 1;
+                        }
+                    }
+                } else {
+                    bubbled[b_len] = c;
+                    b_len += 1;
+                    if is_w_target(c) {
+                        last_target_pos = Some(b_len - 1);
+                    }
                 }
             }
 
-            let Some(tp) = target_pos else {
-                continue;
-            };
-
-            // If already right after target, nothing to do.
-            if tp + 1 == k {
-                continue;
-            }
-
-            // Move this 'w' to position tp+1 by shifting the intervening bytes right by 1.
-            // This matches the swap-based bubbling but with fewer branches.
-            let w = toggled[k];
-            let mut i = k;
-            while i > tp + 1 {
-                toggled[i] = toggled[i - 1];
-                i -= 1;
-            }
-            toggled[tp + 1] = w;
+            toggled = bubbled;
+            t_len = b_len;
         }
 
         // 2. Resolve Telex & Build Char Buffer
@@ -204,7 +226,7 @@ impl UltraFastViEngine {
                 // But wait, raw buffer might be different from char_buf without tone.
                 // Actually if we return raw_buffer here, we return the whole string including the tone key at the end/position.
                 self.out_buffer.clear();
-                self.out_buffer.push_str(&self.raw_buffer);
+                let _ = self.out_buffer.push_str(&self.raw_buffer);
                 return &self.out_buffer;
             }
         }
@@ -218,7 +240,7 @@ impl UltraFastViEngine {
 
         self.out_buffer.clear();
         for &c in &char_buf[..c_len] {
-            self.out_buffer.push(c);
+            let _ = self.out_buffer.push(c);
         }
         &self.out_buffer
     }
@@ -532,3 +554,27 @@ const TONE_VOWELS: [[char; 6]; 12] = [
     ['ư', 'ứ', 'ừ', 'ử', 'ữ', 'ự'],
     ['y', 'ý', 'ỳ', 'ỷ', 'ỹ', 'ỵ'],
 ];
+
+#[cfg(feature = "heapless")]
+#[inline(always)]
+fn new_raw_buffer() -> RawBuffer {
+    RawBuffer::new()
+}
+
+#[cfg(feature = "heapless")]
+#[inline(always)]
+fn new_out_buffer() -> OutBuffer {
+    OutBuffer::new()
+}
+
+#[cfg(not(feature = "heapless"))]
+#[inline(always)]
+fn new_raw_buffer() -> RawBuffer {
+    String::with_capacity(32)
+}
+
+#[cfg(not(feature = "heapless"))]
+#[inline(always)]
+fn new_out_buffer() -> OutBuffer {
+    String::with_capacity(128)
+}

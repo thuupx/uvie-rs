@@ -4,3 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+heapless = { version = "0.8", optional = true }
+
+[features]
+default = ["std"]
+std = []
+heapless = ["dep:heapless"]
+
+[[bin]]
+name = "uvie"
+path = "src/main.rs"
+required-features = ["std"]
