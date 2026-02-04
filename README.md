@@ -78,33 +78,6 @@ Embedded/heapless check:
 cargo check --no-default-features --features heapless
 ```
 
-## Library usage
-
-```rust
-use uvie::{InputMethod, UltraFastViEngine};
-
-let mut e = UltraFastViEngine::new();
-e.set_input_method(InputMethod::Telex);
-
-assert_eq!(e.feed('p'), "p");
-// ... feed more characters
-```
-
-### Selecting VNI
-
-```rust
-use uvie::{InputMethod, UltraFastViEngine};
-
-let mut e = UltraFastViEngine::new();
-e.set_input_method(InputMethod::Vni);
-
-// a6 => â, then 1 => ấ
-for ch in "a61".chars() {
-    e.feed(ch);
-}
-assert_eq!(e.feed(' '), "ấ ");
-```
-
 ## CLI demo
 
 The repository contains a small interactive CLI (enabled only with `std`).
@@ -119,7 +92,7 @@ Controls:
 - Press `Enter` to flush (it feeds a space)
 - Press `Ctrl+C` to exit
 
-## Benchmarks
+## Benchmarks (uvie vs vi)
 
 Benchmarks use `criterion`.
 
@@ -127,7 +100,7 @@ Benchmarks use `criterion`.
 cargo bench
 ```
 
-`cargo bench` runs benchmarks in the `bench` profile (optimized / release-like).
+`cargo bench` runs benchmarks in the `bench` profile (optimized / release-like version).
 
 The benchmark file is in `benches/perf.rs` and currently benchmarks:
 
@@ -144,7 +117,7 @@ It also includes direct comparisons against the [`vi`](https://docs.rs/vi/latest
 - `uvie` is benchmarked by reusing a single `UltraFastViEngine` instance per benchmark and calling `clear()` between iterations.
 - `vi` is benchmarked via `vi::methods::transform_buffer`, reusing a single `String` output buffer per benchmark iteration.
 
-### Results (uvie vs vi)
+### Results
 
 The exact numbers depend on CPU/OS, but the ratio is stable.
 
@@ -158,6 +131,8 @@ Sample run (Apple Silicon, `cargo bench`):
 | uow / uow_like | ~15x | n/a |
 | cluster | ~15x | ~15x |
 | ui | ~22x | ~11x |
+
+See more details at [online report](https://thuupx.github.io/uvie-rs/criterion/report/)
 
 ## Embedded / heapless build
 
