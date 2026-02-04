@@ -165,7 +165,7 @@ impl UltraFastViEngine {
 
             let (mut c, consumed) = (self.mode.resolver)(curr, next);
 
-            // Fix uow -> ươ (Telex-only behavior, but harmless if it never matches)
+            // uow -> ươ
             if curr == b'u' && !consumed {
                 if let Some(n) = next {
                     if n == b'o' {
@@ -367,10 +367,7 @@ impl UltraFastViEngine {
                     if (p0 == 'q' || p0 == 'Q') && (p1 == 'u' || p1 == 'U') && first == 1 {
                         is_open_pair = false;
                         prefer_first = false;
-                    } else if (p0 == 'g' || p0 == 'G')
-                        && (p1 == 'i' || p1 == 'I')
-                        && first == 1
-                    {
+                    } else if (p0 == 'g' || p0 == 'G') && (p1 == 'i' || p1 == 'I') && first == 1 {
                         is_open_pair = false;
                         prefer_first = false;
                     }
