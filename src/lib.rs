@@ -27,6 +27,13 @@ mod tests;
 pub struct UltraFastViEngine {
     raw_buffer: RawBuffer,
     out_buffer: OutBuffer,
+    input_method: InputMethod,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum InputMethod {
+    Telex,
+    Vni,
 }
 
 impl UltraFastViEngine {
@@ -34,7 +41,12 @@ impl UltraFastViEngine {
         Self {
             raw_buffer: new_raw_buffer(),
             out_buffer: new_out_buffer(),
+            input_method: InputMethod::Telex,
         }
+    }
+
+    pub fn set_input_method(&mut self, method: InputMethod) {
+        self.input_method = method;
     }
 
     pub fn feed(&mut self, key: char) -> &str {
@@ -54,6 +66,24 @@ impl UltraFastViEngine {
             return &self.out_buffer;
         }
 
+        let (classify_table, tone_table, w_target_table, resolver, enable_w_bubbling) =
+            match self.input_method {
+                InputMethod::Telex => (
+                    &CLASSIFY_TELEX,
+                    &TONE_TELEX,
+                    &W_TARGET_TELEX,
+                    resolve_telex as ResolverFn,
+                    true,
+                ),
+                InputMethod::Vni => (
+                    &CLASSIFY_VNI,
+                    &TONE_VNI,
+                    &W_TARGET_VNI,
+                    resolve_vni as ResolverFn,
+                    false,
+                ),
+            };
+
         let bytes_all = self.raw_buffer.as_bytes();
         let bytes = &bytes_all[..bytes_all.len().min(32)];
         let mut processed = [0u8; 32];
@@ -62,7 +92,7 @@ impl UltraFastViEngine {
 
         // 1. Filter & Capture Tone
         for (idx, &b) in bytes.iter().enumerate() {
-            let attr = classify(b);
+            let attr = classify_table[b as usize];
             let is_tone = (attr & IS_TONE_KEY) != 0;
 
             if is_tone {
@@ -121,9 +151,9 @@ impl UltraFastViEngine {
             i += 1;
         }
 
-        // 1.6. Retroactive 'w' bubbling (single-pass insertion)
-        // If we see 'w', bubble it leftwards until it hits a char it can modify (a, o, u, d)
-        {
+        if enable_w_bubbling {
+            // 1.6. Retroactive 'w' bubbling (single-pass insertion)
+            // If we see 'w', bubble it leftwards until it hits a char it can modify (a, o, u, d)
             let mut bubbled = [0u8; 32];
             let mut b_len = 0usize;
             let mut last_target_pos: Option<usize> = None;
@@ -141,16 +171,14 @@ impl UltraFastViEngine {
                             bubbled[tp + 1] = b'w';
                             b_len += 1;
                         }
-                    } else {
-                        if b_len < 32 {
-                            bubbled[b_len] = b'w';
-                            b_len += 1;
-                        }
+                    } else if b_len < 32 {
+                        bubbled[b_len] = b'w';
+                        b_len += 1;
                     }
                 } else {
                     bubbled[b_len] = c;
                     b_len += 1;
-                    if is_w_target(c) {
+                    if w_target_table[c as usize] {
                         last_target_pos = Some(b_len - 1);
                     }
                 }
@@ -176,7 +204,7 @@ impl UltraFastViEngine {
                 None
             };
 
-            let (mut c, consumed) = resolve_telex(curr, next);
+            let (mut c, consumed) = resolver(curr, next);
 
             // Fix uow -> ươ
             // Logic: u + o + w -> ươ
@@ -233,7 +261,7 @@ impl UltraFastViEngine {
 
         // 4. Tone Placement
         if last_tone_char > 0 {
-            let tone_id = map_tone(last_tone_char);
+            let tone_id = tone_table[last_tone_char as usize];
             // tone_id 0 means remove tone (z key)
             self.apply_tone_in_place(&mut char_buf[..c_len], vowel_mask, tone_id);
         }
@@ -434,22 +462,9 @@ impl UltraFastViEngine {
 }
 
 // Helpers
-#[inline(always)]
-fn classify(b: u8) -> u8 {
-    CLASSIFY_TABLE[b as usize]
-}
+type ResolverFn = fn(u8, Option<u8>) -> (char, bool);
 
-#[inline(always)]
-fn is_w_target(b: u8) -> bool {
-    W_TARGET_TABLE[b as usize]
-}
-
-#[inline(always)]
-fn map_tone(b: u8) -> u8 {
-    TONE_TABLE[b as usize]
-}
-
-const CLASSIFY_TABLE: [u8; 256] = {
+const CLASSIFY_TELEX: [u8; 256] = {
     let mut t = [0u8; 256];
     t[b'a' as usize] = IS_VOWEL;
     t[b'e' as usize] = IS_VOWEL;
@@ -470,7 +485,26 @@ const CLASSIFY_TABLE: [u8; 256] = {
     t
 };
 
-const W_TARGET_TABLE: [bool; 256] = {
+const CLASSIFY_VNI: [u8; 256] = {
+    let mut t = [0u8; 256];
+    t[b'a' as usize] = IS_VOWEL;
+    t[b'e' as usize] = IS_VOWEL;
+    t[b'o' as usize] = IS_VOWEL;
+    t[b'u' as usize] = IS_VOWEL;
+    t[b'i' as usize] = IS_VOWEL;
+    t[b'y' as usize] = IS_VOWEL;
+
+    // VNI tone digits: 0..5 (0 removes tone)
+    t[b'0' as usize] = IS_TONE_KEY;
+    t[b'1' as usize] = IS_TONE_KEY;
+    t[b'2' as usize] = IS_TONE_KEY;
+    t[b'3' as usize] = IS_TONE_KEY;
+    t[b'4' as usize] = IS_TONE_KEY;
+    t[b'5' as usize] = IS_TONE_KEY;
+    t
+};
+
+const W_TARGET_TELEX: [bool; 256] = {
     let mut t = [false; 256];
     t[b'a' as usize] = true;
     t[b'o' as usize] = true;
@@ -479,7 +513,9 @@ const W_TARGET_TABLE: [bool; 256] = {
     t
 };
 
-const TONE_TABLE: [u8; 256] = {
+const W_TARGET_VNI: [bool; 256] = [false; 256];
+
+const TONE_TELEX: [u8; 256] = {
     let mut t = [0u8; 256];
     t[b's' as usize] = 1;
     t[b'f' as usize] = 2;
@@ -487,6 +523,17 @@ const TONE_TABLE: [u8; 256] = {
     t[b'x' as usize] = 4;
     t[b'j' as usize] = 5;
     t[b'z' as usize] = 0;
+    t
+};
+
+const TONE_VNI: [u8; 256] = {
+    let mut t = [0u8; 256];
+    t[b'0' as usize] = 0;
+    t[b'1' as usize] = 1;
+    t[b'2' as usize] = 2;
+    t[b'3' as usize] = 3;
+    t[b'4' as usize] = 4;
+    t[b'5' as usize] = 5;
     t
 };
 
@@ -501,6 +548,20 @@ fn resolve_telex(curr: u8, next: Option<u8>) -> (char, bool) {
         (b'u', Some(b'w')) => ('ư', true),
         (b'd', Some(b'd')) => ('đ', true),
         (b'w', _) => ('ư', false),
+        _ => (curr as char, false),
+    }
+}
+
+#[inline(always)]
+fn resolve_vni(curr: u8, next: Option<u8>) -> (char, bool) {
+    match (curr, next) {
+        (b'a', Some(b'6')) => ('â', true),
+        (b'a', Some(b'8')) => ('ă', true),
+        (b'e', Some(b'6')) => ('ê', true),
+        (b'o', Some(b'6')) => ('ô', true),
+        (b'o', Some(b'7')) => ('ơ', true),
+        (b'u', Some(b'7')) => ('ư', true),
+        (b'd', Some(b'9')) => ('đ', true),
         _ => (curr as char, false),
     }
 }

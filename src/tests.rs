@@ -1,4 +1,4 @@
-use crate::UltraFastViEngine;
+use crate::{InputMethod, UltraFastViEngine};
 
 fn type_seq(engine: &mut UltraFastViEngine, seq: &str) -> String {
     let mut out = String::new();
@@ -6,6 +6,12 @@ fn type_seq(engine: &mut UltraFastViEngine, seq: &str) -> String {
         out = engine.feed(c).to_string();
     }
     out
+}
+
+fn type_seq_vni(seq: &str) -> String {
+    let mut e = UltraFastViEngine::new();
+    e.set_input_method(InputMethod::Vni);
+    type_seq(&mut e, seq)
 }
 
 #[test]
@@ -248,4 +254,46 @@ fn regression_vowel_pairs() {
 fn regression_pho_validity() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "phos"), "phó");
+}
+
+#[test]
+fn vni_basic_modifiers() {
+    assert_eq!(type_seq_vni("a6"), "â");
+    assert_eq!(type_seq_vni("a8"), "ă");
+    assert_eq!(type_seq_vni("e6"), "ê");
+    assert_eq!(type_seq_vni("o6"), "ô");
+    assert_eq!(type_seq_vni("o7"), "ơ");
+    assert_eq!(type_seq_vni("u7"), "ư");
+    assert_eq!(type_seq_vni("d9"), "đ");
+}
+
+#[test]
+fn vni_basic_tones() {
+    assert_eq!(type_seq_vni("a1"), "á");
+    assert_eq!(type_seq_vni("a2"), "à");
+    assert_eq!(type_seq_vni("a3"), "ả");
+    assert_eq!(type_seq_vni("a4"), "ã");
+    assert_eq!(type_seq_vni("a5"), "ạ");
+}
+
+#[test]
+fn vni_tone_removal() {
+    // a1 -> á, then 0 -> a
+    assert_eq!(type_seq_vni("a10"), "a");
+    // a0 -> a
+    assert_eq!(type_seq_vni("a0"), "a");
+}
+
+#[test]
+fn vni_tones_on_modified_vowels() {
+    // a6 + 1 => ấ
+    assert_eq!(type_seq_vni("a61"), "ấ");
+    // o6 + 1 => ố
+    assert_eq!(type_seq_vni("o61"), "ố");
+    // o7 + 1 => ớ
+    assert_eq!(type_seq_vni("o71"), "ớ");
+    // u7 + 1 => ứ
+    assert_eq!(type_seq_vni("u71"), "ứ");
+    // d9 + 1 should not tone (đ is not in mapping), stays đ
+    assert_eq!(type_seq_vni("d91"), "đ");
 }
