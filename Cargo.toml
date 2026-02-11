@@ -1,7 +1,15 @@
 [package]
 name = "uvie"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
+description = "Ultra fast Vietnamese input method engine (Telex, VNI)"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/thuupx/uvie-rs"
+homepage = "https://github.com/thuupx/uvie-rs"
+keywords = ["vietnamese", "ime", "telex", "vni", "input-method"]
+categories = ["text-processing", "no-std::no-alloc"]
+exclude = ["target/", "docs/"]
 
 [dependencies]
 heapless = { version = "0.8", optional = true }
