@@ -2,6 +2,27 @@ use crate::buffers::{OutBuffer, RawBuffer, new_out_buffer, new_raw_buffer};
 use crate::modes::{IS_TONE_KEY, InputMethod, Mode, mode_for};
 use crate::tone::{is_vowel_unicode, map_vowel_with_tone};
 
+/// Bitmask lookup table for invalid Vietnamese consonant pairs.
+/// Index = (c1 - b'a') * 26 + (c2 - b'a'), value = true if pair is invalid.
+static INVALID_PAIR_TABLE: [bool; 676] = {
+    let mut t = [false; 676];
+    // Helper: encode pair as index
+    macro_rules! mark {
+        ($a:expr, $b:expr) => {
+            t[($a - b'a') as usize * 26 + ($b - b'a') as usize] = true;
+        };
+    }
+    mark!(b'c', b'l'); mark!(b'f', b'l'); mark!(b'b', b'l'); mark!(b'g', b'l');
+    mark!(b's', b'l'); mark!(b'p', b'l');
+    mark!(b'b', b'r'); mark!(b'p', b'r'); mark!(b'd', b'r'); mark!(b'f', b'r');
+    mark!(b'g', b'r'); mark!(b'k', b'r');
+    mark!(b's', b't'); mark!(b's', b'p'); mark!(b's', b'k');
+    mark!(b'p', b't'); mark!(b'p', b'c'); mark!(b'p', b'g'); mark!(b'p', b'q');
+    mark!(b'p', b's'); mark!(b'p', b'k'); mark!(b'p', b'd'); mark!(b'p', b'f');
+    mark!(b'p', b'b');
+    t
+};
+
 pub struct UltraFastViEngine {
     raw_buffer: RawBuffer,
     out_buffer: OutBuffer,
@@ -54,11 +75,14 @@ impl UltraFastViEngine {
         let bytes_all = self.raw_buffer.as_bytes();
         let bytes = &bytes_all[..bytes_all.len().min(32)];
 
-        let mut processed = [0u8; 32];
-        let mut p_len = 0usize;
+        // Filter tone + Toggling (ddd -> d) in one pass
+        let mut toggled = [0u8; 32];
+        let mut t_len = 0usize;
         let mut last_tone_char = 0u8;
+        // State for toggling: track consecutive count of the current character
+        let mut run_char: u8 = 0;
+        let mut run_count: u8 = 0;
 
-        // 1. Filter & Capture Tone
         for (idx, &b) in bytes.iter().enumerate() {
             let attr = self.mode.classify[b as usize];
             let is_tone = (attr & IS_TONE_KEY) != 0;
@@ -66,8 +90,10 @@ impl UltraFastViEngine {
             if is_tone {
                 // Rule 1: First character is always treated as consonant/content
                 if idx == 0 {
-                    processed[p_len] = b;
-                    p_len += 1;
+                    run_char = b;
+                    run_count = 1;
+                    toggled[t_len] = b;
+                    t_len += 1;
                     continue;
                 }
 
@@ -76,44 +102,37 @@ impl UltraFastViEngine {
                 if b == b'r' {
                     let prev = bytes[idx - 1];
                     if matches!(prev, b't' | b'p' | b'f' | b'c' | b'b' | b'd' | b'g' | b'k') {
-                        processed[p_len] = b;
-                        p_len += 1;
+                        run_char = b;
+                        run_count = 1;
+                        toggled[t_len] = b;
+                        t_len += 1;
                         continue;
                     }
                 }
 
                 last_tone_char = b;
             } else {
-                processed[p_len] = b;
-                p_len += 1;
-            }
-        }
-
-        // 1.5. Pre-process Toggling (ddd -> d, aaa -> a)
-        let mut toggled = [0u8; 32];
-        let mut t_len = 0usize;
-        let mut i = 0usize;
-        while i < p_len {
-            let c = processed[i];
-            if i + 2 < p_len && processed[i + 1] == c && processed[i + 2] == c {
-                match c {
-                    b'a' | b'e' | b'o' | b'd' => {
-                        toggled[t_len] = c;
-                        t_len += 1;
-                        i += 3;
+                // Fused toggling: detect triple-repeat (aaa->a, ddd->d, etc.)
+                if b == run_char {
+                    run_count += 1;
+                    if run_count == 3 && matches!(b, b'a' | b'e' | b'o' | b'd') {
+                        // Collapse: the first of the triple is already at t_len-2,
+                        // the second at t_len-1. Remove both extras.
+                        t_len -= 1; // remove the second copy (third is not written)
+                        run_count = 1; // reset: the remaining char starts a new run
                         continue;
                     }
-                    _ => {}
+                } else {
+                    run_char = b;
+                    run_count = 1;
                 }
+                toggled[t_len] = b;
+                t_len += 1;
             }
-            toggled[t_len] = c;
-            t_len += 1;
-            i += 1;
         }
 
-        // 1.6. Mode-dependent modifier preprocessing
+        // Mode-dependent 'w' bubbling
         if self.mode.enable_w_bubbling {
-            // Retroactive 'w' bubbling (single-pass insertion)
             let mut bubbled = [0u8; 32];
             let mut b_len = 0usize;
             let mut last_target_pos: Option<usize> = None;
@@ -122,13 +141,11 @@ impl UltraFastViEngine {
                 let c = toggled[k];
                 if c == b'w' {
                     if let Some(tp) = last_target_pos {
+                        let insert_at = tp + 1;
                         if b_len < 32 {
-                            let mut j = b_len;
-                            while j > tp + 1 {
-                                bubbled[j] = bubbled[j - 1];
-                                j -= 1;
-                            }
-                            bubbled[tp + 1] = b'w';
+                            // Use copy_within for bulk shift instead of byte-by-byte loop
+                            bubbled.copy_within(insert_at..b_len, insert_at + 1);
+                            bubbled[insert_at] = b'w';
                             b_len += 1;
                         }
                     } else if b_len < 32 {
@@ -144,17 +161,17 @@ impl UltraFastViEngine {
                 }
             }
 
+            // Overwrite toggled in-place
             toggled = bubbled;
             t_len = b_len;
         }
 
-        // 2. Resolve mode rules & Build Char Buffer
+        // Resolve mode rules & Build Char Buffer
         let mut char_buf = ['\0'; 32];
         let mut c_len = 0usize;
         let mut vowel_mask = 0u16;
-        let mut v_idx = 0usize;
 
-        i = 0;
+        let mut i = 0usize;
         while i < t_len {
             let curr = toggled[i];
             let next = if i + 1 < t_len {
@@ -186,29 +203,25 @@ impl UltraFastViEngine {
             }
 
             if is_vowel_unicode(c) {
-                if v_idx < 16 {
-                    vowel_mask |= 1 << v_idx;
+                if c_len < 16 {
+                    vowel_mask |= 1 << c_len;
                 }
             }
 
             char_buf[c_len] = c;
             c_len += 1;
-            v_idx += 1;
 
             i += if consumed { 2 } else { 1 };
         }
 
-        // 3. Validation
-        {
-            let valid = !self.is_invalid_vietnamese_chars(&char_buf[..c_len], vowel_mask);
-            if !valid {
-                self.out_buffer.clear();
-                let _ = self.out_buffer.push_str(&self.raw_buffer);
-                return &self.out_buffer;
-            }
+        // Validation
+        if self.is_invalid_vietnamese_chars(&char_buf[..c_len], vowel_mask) {
+            self.out_buffer.clear();
+            let _ = self.out_buffer.push_str(&self.raw_buffer);
+            return &self.out_buffer;
         }
 
-        // 4. Tone Placement
+        // Tone Placement
         if last_tone_char > 0 {
             let tone_id = self.mode.tone[last_tone_char as usize];
             self.apply_tone_in_place(&mut char_buf[..c_len], vowel_mask, tone_id);
@@ -260,65 +273,11 @@ impl UltraFastViEngine {
         if first_vowel_pos == 2 {
             let c1 = chars[0] as u32;
             let c2 = chars[1] as u32;
-            if c1 <= 0x7F && c2 <= 0x7F {
-                let pair = ((c1 as u16) << 8) | (c2 as u16);
-                match pair {
-                     0x636C // cl
-                    | 0x666C // fl
-                    | 0x626C // bl
-                    | 0x676C // gl
-                    | 0x736C // sl
-                    | 0x706C // pl
-                    | 0x6272 // br
-                    | 0x7072 // pr
-                    | 0x6472 // dr
-                    | 0x6672 // fr
-                    | 0x6772 // gr
-                    | 0x6B72 // kr
-                    | 0x7374 // st
-                    | 0x7370 // sp
-                    | 0x736B // sk
-                    | 0x7074 // pt
-                    | 0x7063 // pc
-                    | 0x7067 // pg
-                    | 0x7071 // pq
-                    | 0x7073 // ps
-                    | 0x706B // pk
-                    | 0x7064 // pd
-                    | 0x7066 // pf
-                    | 0x7062 // pb
-                     => return true,
-                    _ => {}
-                }
-            } else {
-                let c1 = chars[0];
-                let c2 = chars[1];
-                match (c1, c2) {
-                    ('c', 'l')
-                    | ('f', 'l')
-                    | ('b', 'l')
-                    | ('g', 'l')
-                    | ('s', 'l')
-                    | ('p', 'l')
-                    | ('b', 'r')
-                    | ('p', 'r')
-                    | ('d', 'r')
-                    | ('f', 'r')
-                    | ('g', 'r')
-                    | ('k', 'r')
-                    | ('s', 't')
-                    | ('s', 'p')
-                    | ('s', 'k')
-                    | ('p', 't')
-                    | ('p', 'c')
-                    | ('p', 'g')
-                    | ('p', 'q')
-                    | ('p', 's')
-                    | ('p', 'k')
-                    | ('p', 'd')
-                    | ('p', 'f')
-                    | ('p', 'b') => return true,
-                    _ => {}
+            // Both chars must be lowercase ASCII a-z for table lookup
+            if c1 >= b'a' as u32 && c1 <= b'z' as u32 && c2 >= b'a' as u32 && c2 <= b'z' as u32 {
+                let table_idx = (c1 - b'a' as u32) as usize * 26 + (c2 - b'a' as u32) as usize;
+                if INVALID_PAIR_TABLE[table_idx] {
+                    return true;
                 }
             }
         }
