@@ -153,6 +153,61 @@ impl UltraFastViEngine {
         }
 
 
+        // Modifier bubbling: move duplicate vowel modifiers (a,e,o,d) next to their
+        {
+            let mut buf = [0u8; 32];
+            let mut b_len = 0usize;
+            // Track the position of the last unsatisfied occurrence of each modifier-eligible char
+            // Only a, e, o, d can form modifier pairs (aa->â, ee->ê, oo->ô, dd->đ)
+            let mut last_pos_a: Option<usize> = None;
+            let mut last_pos_e: Option<usize> = None;
+            let mut last_pos_o: Option<usize> = None;
+            let mut last_pos_d: Option<usize> = None;
+
+            for k in 0..t_len {
+                let c = toggled[k];
+                let target = match c {
+                    b'a' => &mut last_pos_a,
+                    b'e' => &mut last_pos_e,
+                    b'o' => &mut last_pos_o,
+                    b'd' => &mut last_pos_d,
+                    _ => {
+                        buf[b_len] = c;
+                        b_len += 1;
+                        continue;
+                    }
+                };
+
+                if let Some(tp) = *target {
+                    // Found a matching earlier occurrence — bubble this char next to it
+                    let insert_at = tp + 1;
+                    if b_len < 32 {
+                        buf.copy_within(insert_at..b_len, insert_at + 1);
+                        buf[insert_at] = c;
+                        b_len += 1;
+                        // Clear this target (pair consumed)
+                        *target = None;
+                        // Shift any tracked positions that were >= insert_at
+                        for pos in [&mut last_pos_a, &mut last_pos_e, &mut last_pos_o, &mut last_pos_d] {
+                            if let Some(p) = pos {
+                                if *p >= insert_at {
+                                    *p += 1;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // First occurrence — record position
+                    *target = Some(b_len);
+                    buf[b_len] = c;
+                    b_len += 1;
+                }
+            }
+
+            toggled = buf;
+            t_len = b_len;
+        }
+
         // Mode-dependent 'w' bubbling with double-w cancellation
         // Sentinel byte 0x01 = "literal w" that won't be treated as modifier
         const W_LITERAL: u8 = 0x01;
@@ -369,19 +424,12 @@ impl UltraFastViEngine {
                 // Exception: in "qu" prefix, 'u' is a glide, so tone belongs to the following vowel.
                 let mut prefer_first = (f == 'u' || f == 'ư') && sc == 'i';
 
-                // Modified vowels with following plain vowel: tone on the modified vowel
-                // ơi -> tone on ơ (e.g. mới, đời)
-                // ôi -> tone on ô (e.g. tối, lối)
-                // êu -> tone on ê (e.g. nếu, kều)
-                // âu -> tone on â (e.g. đầu, câu)
-                // ây -> tone on â (e.g. đấy, mấy)
-                // ăn-like pairs handled by is_open_pair
-                // NOTE: ươ pair is special — tone goes on ơ (second), not ư
-                if (f == 'ơ' && sc == 'i')
-                    || (f == 'ô' && sc == 'i')
-                    || (f == 'ê' && sc == 'u')
-                    || (f == 'â' && (sc == 'u' || sc == 'y'))
-                {
+                // Modified/circumflex vowels paired with a plain vowel: tone on the modified vowel.
+                // e.g. ơi(mới), ôi(tối), êu(nếu), âu(đầu), ây(đấy), âo(cháo/nấo)
+                // Exception: ươ pair — tone goes on ơ (second), not ư.
+                let f_is_modified = matches!(f, 'ơ' | 'ô' | 'ê' | 'â' | 'ă');
+                let sc_is_plain = matches!(sc, 'a' | 'e' | 'i' | 'o' | 'u' | 'y');
+                if f_is_modified && sc_is_plain {
                     prefer_first = true;
                 }
 

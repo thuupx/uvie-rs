@@ -536,3 +536,55 @@ fn edge_common_vietnamese_words() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "nguowif"), "người");
 }
+
+#[test]
+fn free_style_modifier_bubbling() {
+    // ee modifier with vowel in between: neues -> nếu
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "neues"), "nếu");
+
+    // aa modifier with vowel in between: naos -> nâó? No — naos: n,a,o -> nao + tone s
+    // Actually: nao with free-style aa: naoas -> n,a,o,a -> bubble a next to a -> n,a,a,o -> nâo + s -> nấo
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "naoas"), "nấo");
+
+    // oo modifier with vowel in between: noies -> nối
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "noios"), "nối");
+
+    // Free-style ee: tieengs -> tiếng
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "tieengs"), "tiếng");
+
+    // Free-style with w: moiws -> mới
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "moiws"), "mới");
+
+    // dd modifier with consonant in between is NOT expected (dd must be adjacent)
+    // dnd -> just dnd (d is first char = consonant, n, d = second d but first d is at pos 0)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "dand"), "đan");
+}
+
+#[test]
+fn free_style_does_not_break_normal() {
+    // Normal adjacent modifiers still work
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "aas"), "ấ");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ees"), "ế");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "oos"), "ố");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "dd"), "đ");
+
+    // Triple still toggles back
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "aaa"), "a");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "eee"), "e");
+}
