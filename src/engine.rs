@@ -79,6 +79,7 @@ impl UltraFastViEngine {
         let mut toggled = [0u8; 32];
         let mut t_len = 0usize;
         let mut last_tone_char = 0u8;
+        let mut tone_cancelled = false;
         // State for toggling: track consecutive count of the current character
         let mut run_char: u8 = 0;
         let mut run_count: u8 = 0;
@@ -110,7 +111,27 @@ impl UltraFastViEngine {
                     }
                 }
 
-                last_tone_char = b;
+                // Double tone key cancellation: ss, ff, rr, xx, jj -> undo tone, put key back as literal
+                if b == last_tone_char {
+                    // Cancel the tone and re-insert the key as a literal
+                    if t_len < 32 {
+                        toggled[t_len] = b;
+                        t_len += 1;
+                    }
+                    last_tone_char = 0;
+                    tone_cancelled = true;
+                } else {
+                    // If tone was previously cancelled and we see a new tone key,
+                    // don't re-apply tone (the user already cancelled)
+                    if tone_cancelled {
+                        if t_len < 32 {
+                            toggled[t_len] = b;
+                            t_len += 1;
+                        }
+                    } else {
+                        last_tone_char = b;
+                    }
+                }
             } else {
                 // Fused toggling: detect triple-repeat (aaa->a, ddd->d, etc.)
                 if b == run_char {
@@ -131,19 +152,43 @@ impl UltraFastViEngine {
             }
         }
 
-        // Mode-dependent 'w' bubbling
+
+        // Mode-dependent 'w' bubbling with double-w cancellation
+        // Sentinel byte 0x01 = "literal w" that won't be treated as modifier
+        const W_LITERAL: u8 = 0x01;
         if self.mode.enable_w_bubbling {
+            // First: detect and handle double-w cancellation (ww -> one literal w)
+            let mut ww_buf = [0u8; 32];
+            let mut ww_len = 0usize;
+            let mut wi = 0usize;
+            while wi < t_len {
+                if toggled[wi] == b'w' && wi + 1 < t_len && toggled[wi + 1] == b'w' {
+                    // Double w: output sentinel for literal 'w' (skip bubbling & resolver)
+                    if ww_len < 32 {
+                        ww_buf[ww_len] = W_LITERAL;
+                        ww_len += 1;
+                    }
+                    wi += 2;
+                } else {
+                    if ww_len < 32 {
+                        ww_buf[ww_len] = toggled[wi];
+                        ww_len += 1;
+                    }
+                    wi += 1;
+                }
+            }
+
+            // Now bubble remaining single w's (sentinels pass through untouched)
             let mut bubbled = [0u8; 32];
             let mut b_len = 0usize;
             let mut last_target_pos: Option<usize> = None;
 
-            for k in 0..t_len {
-                let c = toggled[k];
+            for k in 0..ww_len {
+                let c = ww_buf[k];
                 if c == b'w' {
                     if let Some(tp) = last_target_pos {
                         let insert_at = tp + 1;
                         if b_len < 32 {
-                            // Use copy_within for bulk shift instead of byte-by-byte loop
                             bubbled.copy_within(insert_at..b_len, insert_at + 1);
                             bubbled[insert_at] = b'w';
                             b_len += 1;
@@ -161,7 +206,6 @@ impl UltraFastViEngine {
                 }
             }
 
-            // Overwrite toggled in-place
             toggled = bubbled;
             t_len = b_len;
         }
@@ -174,6 +218,15 @@ impl UltraFastViEngine {
         let mut i = 0usize;
         while i < t_len {
             let curr = toggled[i];
+
+            // W_LITERAL sentinel: output literal 'w', skip resolver
+            if curr == W_LITERAL {
+                char_buf[c_len] = 'w';
+                c_len += 1;
+                i += 1;
+                continue;
+            }
+
             let next = if i + 1 < t_len {
                 Some(toggled[i + 1])
             } else {
@@ -212,6 +265,18 @@ impl UltraFastViEngine {
             c_len += 1;
 
             i += if consumed { 2 } else { 1 };
+        }
+
+        // If no vowels in the resolved output and tone keys were stripped, fall back to raw
+        // This handles cases like "txt", "sx" where tone keys have no vowel to act on
+        // Exception: if a modifier was applied (e.g. dd -> đ), keep the resolved output
+        if vowel_mask == 0 && last_tone_char != 0 && !tone_cancelled {
+            let has_modified = char_buf[..c_len].iter().any(|&c| !c.is_ascii());
+            if !has_modified {
+                self.out_buffer.clear();
+                let _ = self.out_buffer.push_str(&self.raw_buffer);
+                return &self.out_buffer;
+            }
         }
 
         // Validation
@@ -301,12 +366,26 @@ impl UltraFastViEngine {
                 let sc = chars.get(second).copied().unwrap_or('\0');
 
                 // Special case: ui/ưi (e.g. "túi", "gửi") place tone on the first vowel.
-                // Without this, tone is incorrectly applied to 'i' (e.g. "gưỉ").
-                // Exception: in "qu" prefix, 'u' is a glide, so tone belongs to the following vowel (e.g. "quỉ").
+                // Exception: in "qu" prefix, 'u' is a glide, so tone belongs to the following vowel.
                 let mut prefer_first = (f == 'u' || f == 'ư') && sc == 'i';
 
+                // Modified vowels with following plain vowel: tone on the modified vowel
+                // ơi -> tone on ơ (e.g. mới, đời)
+                // ôi -> tone on ô (e.g. tối, lối)
+                // êu -> tone on ê (e.g. nếu, kều)
+                // âu -> tone on â (e.g. đầu, câu)
+                // ây -> tone on â (e.g. đấy, mấy)
+                // ăn-like pairs handled by is_open_pair
+                // NOTE: ươ pair is special — tone goes on ơ (second), not ư
+                if (f == 'ơ' && sc == 'i')
+                    || (f == 'ô' && sc == 'i')
+                    || (f == 'ê' && sc == 'u')
+                    || (f == 'â' && (sc == 'u' || sc == 'y'))
+                {
+                    prefer_first = true;
+                }
+
                 // Standard open pairs that often prefer tone on the first vowel.
-                // EXCLUDED pairs prefer tone on second vowel.
                 let mut is_open_pair = (f == 'i' && (sc == 'a' || sc == 'u'))
                     || (f == 'u' && (sc == 'a' || sc == 'e'))
                     || (f == 'ư' && (sc == 'a' || sc == 'u'))
@@ -317,8 +396,6 @@ impl UltraFastViEngine {
                     || (f == 'â' && (sc == 'y' || sc == 'u'));
 
                 // Exception: "qu" and "gi" logic
-                // If starts with "qu" -> u is glide, tone on next vowel
-                // If starts with "gi" -> i is consonant part, tone on next vowel
                 if chars.len() >= 2 {
                     let p0 = chars[0];
                     let p1 = chars[1];

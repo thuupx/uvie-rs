@@ -304,3 +304,235 @@ fn vni_tones_on_modified_vowels() {
     // d9 + 1 should not tone (đ is not in mapping), stays đ
     assert_eq!(type_seq_vni("d91"), "đ");
 }
+
+#[test]
+fn tone_on_modified_vowel_oi() {
+    // mơí -> mới (tone on ơ, not i)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "mowis"), "mới");
+}
+
+#[test]
+fn tone_on_modified_vowel_eu() {
+    // nêú -> nếu (tone on ê, not u)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "neeus"), "nếu");
+}
+
+#[test]
+fn double_tone_key_undoes_tone() {
+    // tess -> test (double s undoes the tone, s becomes literal)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "tess"), "tes");
+
+    // teff -> tef
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "teff"), "tef");
+
+    // terr -> ter
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "terr"), "ter");
+
+    // texx -> tex
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "texx"), "tex");
+
+    // tejj -> tej
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "tejj"), "tej");
+}
+
+#[test]
+fn double_w_undoes_modification() {
+    // showw -> show (double w undoes ơ)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "showw"), "show");
+
+    // oww -> ow
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "oww"), "ow");
+
+    // uww -> uw
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "uww"), "uw");
+}
+
+#[test]
+fn consonant_only_no_duplication() {
+    // txt should stay txt (no duplication)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "txt"), "txt");
+
+    // sx should stay sx
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "sx"), "sx");
+}
+
+#[test]
+fn double_tone_then_continue() {
+    // vieetj -> việt (double e makes ê, then tone j)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "vieetj"), "việt");
+}
+
+#[test]
+fn tone_placement_oi_pair() {
+    // đời -> ddowif
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddowif"), "đời");
+
+    // tối -> toois
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "toois"), "tối");
+
+    // lối -> loois
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "loois"), "lối");
+}
+
+#[test]
+fn tone_placement_eu_pair() {
+    // nếu -> neeus
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "neeus"), "nếu");
+
+    // kều -> keeuf (tone f = huyền)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "keeuf"), "kều");
+
+    // kểu -> keeur (tone r = hỏi)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "keeur"), "kểu");
+}
+
+// ===== Comprehensive edge case tests =====
+
+#[test]
+fn edge_double_tone_various_positions() {
+    // Double tone at end of word with vowel
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "bass"), "bas");
+
+    // Double tone in middle then more chars
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "tesstt"), "testt");
+
+    // zz should also cancel
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "azz"), "az");
+}
+
+#[test]
+fn edge_double_w_various() {
+    // aww -> aw (undo ă)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "aww"), "aw");
+
+    // ddoww -> đow (undo ơ, keep đ)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddoww"), "đow");
+}
+
+#[test]
+fn edge_english_words_passthrough() {
+    // Common English words that contain tone keys
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "stress"), "stress");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "jazz"), "jaz");
+
+    // Pure consonant sequences
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "txt"), "txt");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "rx"), "rx");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "sx"), "sx");
+}
+
+#[test]
+fn edge_modified_vowel_tone_placement() {
+    // ươi -> tone on ơ (second in ươ pair)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "huowis"), "hưới");
+
+    // ươn -> tone on ơ
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "huowns"), "hướn");
+
+    // ươ alone -> tone on ơ
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "huows"), "hướ");
+
+    // âu -> tone on â
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "daauf"), "dầu");
+
+    // ây -> tone on â
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "daays"), "dấy");
+}
+
+#[test]
+fn edge_consecutive_words_via_space() {
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "vieetj"), "việt");
+    assert_eq!(e.feed(' '), "việt ");
+    assert_eq!(type_seq(&mut e, "namm"), "namm");
+}
+
+#[test]
+fn edge_single_char_tone_keys() {
+    // Single tone key chars should pass through as-is
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "s"), "s");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "f"), "f");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "r"), "r");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "x"), "x");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "j"), "j");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "z"), "z");
+}
+
+#[test]
+fn edge_common_vietnamese_words() {
+    // Common words that exercise multiple features
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "xins"), "xín");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "chaof"), "chào");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddeepj"), "đệp");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "nawm"), "năm");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "nawms"), "nắm");
+
+    // không -> khoongf (ô + huyền = ồ)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "khoongf"), "khồng");
+
+    // được -> dduowcj
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "dduowcj"), "được");
+
+    // người -> nguowif
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "nguowif"), "người");
+}
