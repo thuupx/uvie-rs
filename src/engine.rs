@@ -83,6 +83,10 @@ impl UltraFastViEngine {
         // State for toggling: track consecutive count of the current character
         let mut run_char: u8 = 0;
         let mut run_count: u8 = 0;
+        // Flags for deferred bubbling (computed during this pass, zero extra cost)
+        let mut seen_mod: u8 = 0;   // bitmask: bit0=a, bit1=e, bit2=o, bit3=d
+        let mut need_mod_bubble = false;
+        let mut has_w = false;
 
         for (idx, &b) in bytes.iter().enumerate() {
             let attr = self.mode.classify[b as usize];
@@ -137,132 +141,127 @@ impl UltraFastViEngine {
                 if b == run_char {
                     run_count += 1;
                     if run_count == 3 && matches!(b, b'a' | b'e' | b'o' | b'd') {
-                        // Collapse: the first of the triple is already at t_len-2,
-                        // the second at t_len-1. Remove both extras.
-                        t_len -= 1; // remove the second copy (third is not written)
-                        run_count = 1; // reset: the remaining char starts a new run
+                        t_len -= 1;
+                        run_count = 1;
                         continue;
                     }
                 } else {
                     run_char = b;
                     run_count = 1;
                 }
+                // Track modifier/w flags for deferred bubbling (zero-cost: piggyback on this loop)
+                match b {
+                    b'a' => { let bit = 1u8 << 0; if seen_mod & bit != 0 { need_mod_bubble = true; } seen_mod |= bit; }
+                    b'e' => { let bit = 1u8 << 1; if seen_mod & bit != 0 { need_mod_bubble = true; } seen_mod |= bit; }
+                    b'o' => { let bit = 1u8 << 2; if seen_mod & bit != 0 { need_mod_bubble = true; } seen_mod |= bit; }
+                    b'd' => { let bit = 1u8 << 3; if seen_mod & bit != 0 { need_mod_bubble = true; } seen_mod |= bit; }
+                    b'w' => { has_w = true; }
+                    _ => {}
+                }
                 toggled[t_len] = b;
                 t_len += 1;
             }
         }
 
-
-        // Modifier bubbling: move duplicate vowel modifiers (a,e,o,d) next to their
+        // Fused modifier + w bubbling pass (single buffer copy)
+        // Handles: free-style modifier bubbling (aa/ee/oo/dd), double-w cancellation, w-bubbling
+        // Flags need_mod_bubble / has_w were computed in the first pass above (zero extra scan)
+        const W_LITERAL: u8 = 0x01;
+        let need_w_pass = has_w && self.mode.enable_w_bubbling;
         {
-            let mut buf = [0u8; 32];
-            let mut b_len = 0usize;
-            // Track the position of the last unsatisfied occurrence of each modifier-eligible char
-            // Only a, e, o, d can form modifier pairs (aa->â, ee->ê, oo->ô, dd->đ)
-            let mut last_pos_a: Option<usize> = None;
-            let mut last_pos_e: Option<usize> = None;
-            let mut last_pos_o: Option<usize> = None;
-            let mut last_pos_d: Option<usize> = None;
+            if need_mod_bubble || need_w_pass {
+                let mut buf = [0u8; 32];
+                let mut b_len = 0usize;
 
-            for k in 0..t_len {
-                let c = toggled[k];
-                let target = match c {
-                    b'a' => &mut last_pos_a,
-                    b'e' => &mut last_pos_e,
-                    b'o' => &mut last_pos_o,
-                    b'd' => &mut last_pos_d,
-                    _ => {
+                // Phase 1: modifier bubbling + double-w collapse in one scan
+                let mut last_pos: [u8; 4] = [0xFF; 4]; // a,e,o,d positions (0xFF = none)
+                let mut wi = 0usize;
+                while wi < t_len {
+                    let c = toggled[wi];
+
+                    // Double-w cancellation
+                    if c == b'w' && self.mode.enable_w_bubbling {
+                        if wi + 1 < t_len && toggled[wi + 1] == b'w' {
+                            buf[b_len] = W_LITERAL;
+                            b_len += 1;
+                            wi += 2;
+                            continue;
+                        }
+                        // Single w: just append, will be bubbled in phase 2
                         buf[b_len] = c;
                         b_len += 1;
+                        wi += 1;
                         continue;
                     }
-                };
 
-                if let Some(tp) = *target {
-                    // Found a matching earlier occurrence — bubble this char next to it
-                    let insert_at = tp + 1;
-                    if b_len < 32 {
-                        buf.copy_within(insert_at..b_len, insert_at + 1);
-                        buf[insert_at] = c;
-                        b_len += 1;
-                        // Clear this target (pair consumed)
-                        *target = None;
-                        // Shift any tracked positions that were >= insert_at
-                        for pos in [&mut last_pos_a, &mut last_pos_e, &mut last_pos_o, &mut last_pos_d] {
-                            if let Some(p) = pos {
-                                if *p >= insert_at {
+                    // Modifier bubbling for a,e,o,d
+                    let slot = match c {
+                        b'a' => Some(0),
+                        b'e' => Some(1),
+                        b'o' => Some(2),
+                        b'd' => Some(3),
+                        _ => None,
+                    };
+
+                    if let Some(s) = slot {
+                        if last_pos[s] != 0xFF {
+                            // Bubble: insert next to first occurrence
+                            let insert_at = last_pos[s] as usize + 1;
+                            buf.copy_within(insert_at..b_len, insert_at + 1);
+                            buf[insert_at] = c;
+                            b_len += 1;
+                            last_pos[s] = 0xFF; // consumed
+                            // Shift tracked positions
+                            for p in last_pos.iter_mut() {
+                                if *p != 0xFF && *p as usize >= insert_at {
                                     *p += 1;
                                 }
                             }
+                        } else {
+                            last_pos[s] = b_len as u8;
+                            buf[b_len] = c;
+                            b_len += 1;
                         }
-                    }
-                } else {
-                    // First occurrence — record position
-                    *target = Some(b_len);
-                    buf[b_len] = c;
-                    b_len += 1;
-                }
-            }
-
-            toggled = buf;
-            t_len = b_len;
-        }
-
-        // Mode-dependent 'w' bubbling with double-w cancellation
-        // Sentinel byte 0x01 = "literal w" that won't be treated as modifier
-        const W_LITERAL: u8 = 0x01;
-        if self.mode.enable_w_bubbling {
-            // First: detect and handle double-w cancellation (ww -> one literal w)
-            let mut ww_buf = [0u8; 32];
-            let mut ww_len = 0usize;
-            let mut wi = 0usize;
-            while wi < t_len {
-                if toggled[wi] == b'w' && wi + 1 < t_len && toggled[wi + 1] == b'w' {
-                    // Double w: output sentinel for literal 'w' (skip bubbling & resolver)
-                    if ww_len < 32 {
-                        ww_buf[ww_len] = W_LITERAL;
-                        ww_len += 1;
-                    }
-                    wi += 2;
-                } else {
-                    if ww_len < 32 {
-                        ww_buf[ww_len] = toggled[wi];
-                        ww_len += 1;
+                    } else {
+                        buf[b_len] = c;
+                        b_len += 1;
                     }
                     wi += 1;
                 }
-            }
 
-            // Now bubble remaining single w's (sentinels pass through untouched)
-            let mut bubbled = [0u8; 32];
-            let mut b_len = 0usize;
-            let mut last_target_pos: Option<usize> = None;
+                // Phase 2: w-bubbling in-place on buf (only if needed)
+                if need_w_pass {
+                    let mut out = [0u8; 32];
+                    let mut o_len = 0usize;
+                    let mut last_target_pos: Option<usize> = None;
 
-            for k in 0..ww_len {
-                let c = ww_buf[k];
-                if c == b'w' {
-                    if let Some(tp) = last_target_pos {
-                        let insert_at = tp + 1;
-                        if b_len < 32 {
-                            bubbled.copy_within(insert_at..b_len, insert_at + 1);
-                            bubbled[insert_at] = b'w';
-                            b_len += 1;
+                    for k in 0..b_len {
+                        let c = buf[k];
+                        if c == b'w' {
+                            if let Some(tp) = last_target_pos {
+                                let insert_at = tp + 1;
+                                out.copy_within(insert_at..o_len, insert_at + 1);
+                                out[insert_at] = b'w';
+                                o_len += 1;
+                            } else {
+                                out[o_len] = b'w';
+                                o_len += 1;
+                            }
+                        } else {
+                            out[o_len] = c;
+                            o_len += 1;
+                            if self.mode.w_target[c as usize] {
+                                last_target_pos = Some(o_len - 1);
+                            }
                         }
-                    } else if b_len < 32 {
-                        bubbled[b_len] = b'w';
-                        b_len += 1;
                     }
+                    toggled = out;
+                    t_len = o_len;
                 } else {
-                    bubbled[b_len] = c;
-                    b_len += 1;
-                    if self.mode.w_target[c as usize] {
-                        last_target_pos = Some(b_len - 1);
-                    }
+                    toggled = buf;
+                    t_len = b_len;
                 }
             }
-
-            toggled = bubbled;
-            t_len = b_len;
         }
 
         // Resolve mode rules & Build Char Buffer
