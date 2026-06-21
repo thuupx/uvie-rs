@@ -1,6 +1,6 @@
 [package]
 name = "uvie"
-version = "2.0.4"
+version = "2.0.5"
 edition = "2024"
 description = "Ultra fast Vietnamese input method engine (Telex, VNI)"
 readme = "README.md"
