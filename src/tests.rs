@@ -626,6 +626,28 @@ fn free_style_modifier_bubbling() {
 }
 
 #[test]
+fn relaxed_coda_allows_g_shorthand() {
+    // Strict mode: lone g is not a legal coda -> passthrough
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddawjg"), "đawjg");
+
+    // Relaxed mode: g is accepted as shorthand for ng
+    let mut e = UltraFastViEngine::new();
+    e.set_relaxed_coda(true);
+    assert_eq!(type_seq(&mut e, "ddawjg"), "đặg");
+
+    // Relaxed mode also works with other tones
+    let mut e = UltraFastViEngine::new();
+    e.set_relaxed_coda(true);
+    assert_eq!(type_seq(&mut e, "ddasg"), "đág");
+
+    // Standard ng still works in relaxed mode
+    let mut e = UltraFastViEngine::new();
+    e.set_relaxed_coda(true);
+    assert_eq!(type_seq(&mut e, "ddawngj"), "đặng");
+}
+
+#[test]
 fn no_bubble_across_consonants() {
     // reset: e..e separated by consonant 's' -> no bubble, stays "reset"
     let mut e = UltraFastViEngine::new();
@@ -1510,7 +1532,7 @@ fn debug_gif_via_is_valid() {
     use crate::tables::{is_legal_coda, is_legal_nucleus, is_legal_onset};
     assert!(is_legal_onset(b"g"), "g is legal onset");
     assert!(is_legal_nucleus(&['i']), "i is legal nucleus");
-    assert!(is_legal_coda(b""), "empty coda is legal");
+    assert!(is_legal_coda(b"", false), "empty coda is legal");
     println!("All table checks pass for g+i");
 }
 

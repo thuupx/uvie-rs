@@ -27,6 +27,7 @@ pub struct UltraFastViEngine {
     pub(crate) enable_quick_start: bool,
     pub(crate) enable_quick_telex: bool,
     pub(crate) enable_modern_orthography: bool,
+    pub(crate) enable_relaxed_coda: bool,
 
     /// Incrementally maintained syllable structure (onset/nucleus/coda slots).
     pub(crate) syl_structure: SylStructure,
@@ -50,6 +51,7 @@ impl UltraFastViEngine {
             enable_quick_start: false,
             enable_quick_telex: false,
             enable_modern_orthography: false,
+            enable_relaxed_coda: false,
             syl_structure: SylStructure::new(),
             diff: DiffState::new(),
         }
@@ -78,6 +80,13 @@ impl UltraFastViEngine {
     }
     pub fn modern_orthography(&self) -> bool {
         self.enable_modern_orthography
+    }
+
+    pub fn set_relaxed_coda(&mut self, enabled: bool) {
+        self.enable_relaxed_coda = enabled;
+    }
+    pub fn relaxed_coda(&self) -> bool {
+        self.enable_relaxed_coda
     }
 
     pub fn set_input_method(&mut self, method: InputMethod) {

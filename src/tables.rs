@@ -116,13 +116,17 @@ static LEGAL_CODAS: &[&[u8]] = &[
 
 /// Returns `true` if `coda` (slice of raw base bytes after the nucleus) is a
 /// legal Vietnamese final cluster.  The empty coda is always legal.
-pub fn is_legal_coda(coda: &[u8]) -> bool {
+///
+/// When `relaxed` is `true`, the final `g` is also accepted as shorthand for
+/// `ng` (e.g. "đặg" for "đặng").
+pub fn is_legal_coda(coda: &[u8], relaxed: bool) -> bool {
     match coda.len() {
         0 => true,
-        1 => matches!(
-            coda[0],
-            b't' | b'p' | b'c' | b'n' | b'm' | b'i' | b'y' | b'u' | b'o'
-        ),
+        1 => match coda[0] {
+            b't' | b'p' | b'c' | b'n' | b'm' | b'i' | b'y' | b'u' | b'o' => true,
+            b'g' if relaxed => true,
+            _ => false,
+        },
         2 => matches!(coda, b"ng" | b"nh" | b"ch"),
         _ => false,
     }
@@ -135,13 +139,19 @@ pub fn is_legal_coda(coda: &[u8]) -> bool {
 /// - All other codas (or empty coda) allow any tone.
 ///
 /// Vietnamese phonotactic rule: stopped codas only allow sắc/nặng tones.
-pub fn tone_allowed_for_coda(coda: &[u8], tone: u8) -> bool {
+///
+/// In `relaxed` mode, a lone `g` coda is treated as shorthand for `ng` and
+/// therefore allows any tone.
+pub fn tone_allowed_for_coda(coda: &[u8], tone: u8, relaxed: bool) -> bool {
     if tone == 0 {
         return true; // bằng / no-tone always OK
     }
     match coda.len() {
         0 => true,
         1 => {
+            if coda[0] == b'g' && relaxed {
+                return true;
+            }
             if matches!(coda[0], b'c' | b'p' | b't') {
                 matches!(tone, 1 | 5)
             } else {
@@ -500,11 +510,12 @@ pub fn is_legal_syllable(
     nucleus_out: &[char],
     coda_raw: &[u8],
     tone: u8,
+    relaxed: bool,
 ) -> bool {
     is_legal_onset(onset_raw)
         && is_legal_nucleus(nucleus_out)
-        && is_legal_coda(coda_raw)
-        && tone_allowed_for_coda(coda_raw, tone)
+        && is_legal_coda(coda_raw, relaxed)
+        && tone_allowed_for_coda(coda_raw, tone, relaxed)
 }
 
 // ---------------------------------------------------------------------------
@@ -610,44 +621,50 @@ mod tests {
 
     #[test]
     fn coda_single() {
-        assert!(is_legal_coda(b"t"));
-        assert!(is_legal_coda(b"n"));
-        assert!(is_legal_coda(b"m"));
-        assert!(is_legal_coda(b"c"));
-        assert!(is_legal_coda(b"p"));
-        assert!(is_legal_coda(b"i"));
-        assert!(is_legal_coda(b"y"));
-        assert!(is_legal_coda(b"u"));
-        assert!(is_legal_coda(b""));
+        assert!(is_legal_coda(b"t", false));
+        assert!(is_legal_coda(b"n", false));
+        assert!(is_legal_coda(b"m", false));
+        assert!(is_legal_coda(b"c", false));
+        assert!(is_legal_coda(b"p", false));
+        assert!(is_legal_coda(b"i", false));
+        assert!(is_legal_coda(b"y", false));
+        assert!(is_legal_coda(b"u", false));
+        assert!(is_legal_coda(b"", false));
+        // relaxed mode: lone g as shorthand for ng
+        assert!(is_legal_coda(b"g", true));
+        assert!(!is_legal_coda(b"g", false));
     }
 
     #[test]
     fn coda_digraph() {
-        assert!(is_legal_coda(b"ng"));
-        assert!(is_legal_coda(b"nh"));
-        assert!(is_legal_coda(b"ch"));
+        assert!(is_legal_coda(b"ng", false));
+        assert!(is_legal_coda(b"nh", false));
+        assert!(is_legal_coda(b"ch", false));
     }
 
     #[test]
     fn coda_illegal() {
-        assert!(!is_legal_coda(b"tt"));
-        assert!(!is_legal_coda(b"ll"));
-        assert!(!is_legal_coda(b"ngg"));
+        assert!(!is_legal_coda(b"tt", false));
+        assert!(!is_legal_coda(b"ll", false));
+        assert!(!is_legal_coda(b"ngg", false));
     }
 
     #[test]
     fn tone_coda_constraint() {
         // c/ch/p/t only allow sắc(1) and nặng(5)
-        assert!(tone_allowed_for_coda(b"c", 1));
-        assert!(tone_allowed_for_coda(b"c", 5));
-        assert!(!tone_allowed_for_coda(b"c", 3));
-        assert!(!tone_allowed_for_coda(b"c", 4));
-        assert!(tone_allowed_for_coda(b"ch", 1));
-        assert!(!tone_allowed_for_coda(b"ch", 3));
+        assert!(tone_allowed_for_coda(b"c", 1, false));
+        assert!(tone_allowed_for_coda(b"c", 5, false));
+        assert!(!tone_allowed_for_coda(b"c", 3, false));
+        assert!(!tone_allowed_for_coda(b"c", 4, false));
+        assert!(tone_allowed_for_coda(b"ch", 1, false));
+        assert!(!tone_allowed_for_coda(b"ch", 3, false));
         // n/m/ng are free
-        assert!(tone_allowed_for_coda(b"n", 3));
-        assert!(tone_allowed_for_coda(b"ng", 4));
-        assert!(tone_allowed_for_coda(b"", 3));
+        assert!(tone_allowed_for_coda(b"n", 3, false));
+        assert!(tone_allowed_for_coda(b"ng", 4, false));
+        assert!(tone_allowed_for_coda(b"", 3, false));
+        // relaxed mode: lone g behaves like ng
+        assert!(tone_allowed_for_coda(b"g", 3, true));
+        assert!(tone_allowed_for_coda(b"g", 4, true));
     }
 
     #[test]

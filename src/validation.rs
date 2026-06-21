@@ -70,10 +70,10 @@ impl SyllableValidator for UltraFastViEngine {
         if !is_legal_nucleus(nuc_slice) {
             return false;
         }
-        if !is_legal_coda(coda_slice) {
+        if !is_legal_coda(coda_slice, self.enable_relaxed_coda) {
             return false;
         }
-        if !tone_allowed_for_coda(coda_slice, tone) {
+        if !tone_allowed_for_coda(coda_slice, tone, self.enable_relaxed_coda) {
             return false;
         }
 
