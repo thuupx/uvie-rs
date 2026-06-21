@@ -25,6 +25,37 @@ fn type_seq_vni(seq: &str) -> String {
 }
 
 #[test]
+fn regression_user_reported_words() {
+    // chuaw -> chưa (w bubbles back to u and turns it into ư)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "chuaw"), "chưa", "chuaw should produce chưa");
+
+    // chuyến / huyễn also need the standard Telex path to work
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "chuyenes"), "chuyến", "chuyenes should produce chuyến");
+
+    // chuýên -> chuyến (pre-accented y should be treated as base y)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "chuýên"), "chuyến", "chuýên should produce chuyến");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "huyeenx"), "huyễn", "huyeenx should produce huyễn");
+
+    // huỹên -> huyễn (pre-accented y with ngã should be treated as base y)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "huỹên"), "huyễn", "huỹên should produce huyễn");
+
+    // Same words in VNI mode with composed characters
+    let mut e = UltraFastViEngine::new();
+    e.set_input_method(InputMethod::Vni);
+    assert_eq!(type_seq(&mut e, "chuýên"), "chuyến", "VNI: chuýên should produce chuyến");
+
+    let mut e = UltraFastViEngine::new();
+    e.set_input_method(InputMethod::Vni);
+    assert_eq!(type_seq(&mut e, "huỹên"), "huyễn", "VNI: huỹên should produce huyễn");
+}
+
+#[test]
 fn telex_modifier_basic() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "aa"), "â");
@@ -1716,6 +1747,319 @@ fn test_double_w_cancel() {
 
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "fix"), "fix", "fix should produce fix");
+}
+
+#[test]
+fn comprehensive_vietnamese_phonotactics() {
+    // Comprehensive coverage of Vietnamese syllable shapes.  Each tuple is
+    // (telex_input, expected_output).  We avoid "workaround" feel by testing
+    // every major nucleus + coda + tone interaction.
+    let cases: &[(&str, &str)] = &[
+        // Single vowels with all tones
+        ("af", "à"),
+        ("as", "á"),
+        ("ar", "ả"),
+        ("ax", "ã"),
+        ("aj", "ạ"),
+        ("aaf", "ầ"),
+        ("aas", "ấ"),
+        ("awr", "ẳ"),
+        ("awx", "ẵ"),
+        ("awj", "ặ"),
+        ("eef", "ề"),
+        ("ees", "ế"),
+        ("oof", "ồ"),
+        ("oos", "ố"),
+        ("owf", "ờ"),
+        ("ows", "ớ"),
+        ("uwf", "ừ"),
+        ("uws", "ứ"),
+        ("yf", "ỳ"),
+        ("ys", "ý"),
+        // d with stroke
+        ("dd", "đ"),
+        ("ddi", "đi"),
+        ("ddeens", "đến"),
+        ("ddawtj", "đặt"),
+        ("dduongwf", "đường"),
+        ("Ddi", "Đi"),
+        // Diphthongs
+        ("ai", "ai"),
+        ("aos", "áo"),
+        ("aauj", "ậu"),
+        ("aayr", "ẩy"),
+        ("aaus", "ấu"),
+        ("aays", "ấy"),
+        ("eo", "eo"),
+        ("eos", "éo"),
+        ("ia", "ia"),
+        ("ias", "ía"),
+        ("iee", "iê"),
+        ("iees", "iế"),
+        ("oai", "oai"),
+        ("oaif", "oài"),
+        ("oan", "oan"),
+        ("oans", "oán"),
+        ("oe", "oe"),
+        ("oes", "oé"),
+        ("oi", "oi"),
+        ("ois", "ói"),
+        ("oai", "oai"),
+        ("oaij", "oại"),
+        ("oay", "oay"),
+        ("oays", "oáy"),
+        ("oo", "ô"),
+        ("ooi", "ôi"),
+        ("oosi", "ối"),
+        ("ow", "ơ"),
+        ("owi", "ơi"),
+        ("ows", "ớ"),
+        ("ua", "ua"),
+        ("uas", "úa"),
+        ("uaf", "ùa"),
+        ("uaj", "ụa"),
+        ("uas", "úa"),
+        ("uaw", "ưa"),
+        ("uaws", "ứa"),
+        ("uaf", "ùa"),
+        ("uee", "uê"),
+        ("uees", "uế"),
+        ("ueef", "uề"),
+        ("ueer", "uể"),
+        ("ueex", "uễ"),
+        ("ueej", "uệ"),
+        ("uooi", "uôi"),
+        ("uoois", "uối"),
+        ("uoong", "uông"),
+        ("uoongs", "uống"),
+        ("uowng", "ương"),
+        ("uowngs", "ướng"),
+        ("uowc", "ươc"),
+        ("uowj", "ượ"),
+        ("uowcs", "ước"),
+        ("uy", "uy"),
+        ("uys", "uý"),
+        ("uyf", "uỳ"),
+        ("uyr", "uỷ"),
+        ("uyx", "uỹ"),
+        ("uyj", "uỵ"),
+        ("uyee", "uyê"),
+        ("uyees", "uyế"),
+        ("uyeetj", "uyệt"),
+        ("uyeets", "uyết"),
+        ("yee", "yê"),
+        ("yees", "yế"),
+        ("yeef", "yề"),
+        ("yeeu", "yêu"),
+        ("yeeus", "yếu"),
+        ("yeef", "yề"),
+        // Triphthongs
+        ("ieeu", "iêu"),
+        ("ieeus", "iếu"),
+        ("ieeuf", "iều"),
+        ("yeeu", "yêu"),
+        ("yeeus", "yếu"),
+        ("oai", "oai"),
+        ("oaif", "oài"),
+        ("oaij", "oại"),
+        ("uya", "uya"),
+        ("uyaf", "uỳa"),
+        ("uooi", "uôi"),
+        ("uoois", "uối"),
+        ("uowi", "ươi"),
+        ("uowis", "ưới"),
+        ("uowu", "ươu"),
+        ("uowus", "ướu"),
+        // glides
+        ("qua", "qua"),
+        ("quas", "quá"),
+        ("quaf", "quà"),
+        ("quys", "quý"),
+        ("quyeen", "quyên"),
+        ("quyeens", "quyến"),
+        ("quyeetj", "quyệt"),
+        ("quyeets", "quyết"),
+        ("gia", "gia"),
+        ("gias", "giá"),
+        ("giaf", "già"),
+        ("giang", "giang"),
+        ("giangs", "giáng"),
+        ("giai", "giai"),
+        ("giaif", "giài"),
+        ("giao", "giao"),
+        ("giaos", "giáo"),
+        // Common words
+        ("tieeng", "tiêng"),
+        ("tieengs", "tiếng"),
+        ("viet", "viet"),
+        ("vieets", "viết"),
+        ("nam", "nam"),
+        ("hoas", "hoá"),
+        ("hoaf", "hoà"),
+        ("chao", "chao"),
+        ("chaos", "cháo"),
+        ("cam", "cam"),
+        ("cams", "cám"),
+        ("on", "on"),
+        ("ons", "ón"),
+        ("hoanf", "hoàn"),
+        ("hoanj", "hoạn"),
+        ("hoangx", "hoãng"),
+        ("hoangf", "hoàng"),
+        ("hoacs", "hoác"),
+        ("hoacj", "hoạc"),
+        ("hoaj", "hoạ"),
+        ("hoawjc", "hoặc"),
+        ("mows", "mớ"),
+        ("mow", "mơ"),
+        ("moww", "mow"),
+        ("show", "show"),
+        ("showw", "show"),
+        ("khuas", "khúa"),
+        ("khuaf", "khùa"),
+        ("khuaw", "khưa"),
+        ("khuaws", "khứa"),
+        ("thuongw", "thương"),
+        ("thuowng", "thương"),
+        ("thuongws", "thướng"),
+        ("thuongwf", "thường"),
+        ("thuongwx", "thưỡng"),
+        ("thuongwj", "thượng"),
+        ("chuaw", "chưa"),
+        ("chuyenes", "chuyến"),
+        ("huyeenx", "huyễn"),
+        ("nghe", "nghe"),
+        ("nghes", "nghé"),
+        ("nghef", "nghè"),
+        ("nghi", "nghi"),
+        ("nghis", "nghí"),
+        ("nghiee", "nghiê"),
+        ("nghiees", "nghiế"),
+        ("nghieen", "nghiên"),
+        ("nghieens", "nghiến"),
+        ("nghieem", "nghiêm"),
+        ("nghieems", "nghiếm"),
+        ("nha", "nha"),
+        ("nhas", "nhá"),
+        ("nhaf", "nhà"),
+        ("nhan", "nhan"),
+        ("nhans", "nhán"),
+        ("xem", "xem"),
+        ("xems", "xém"),
+        ("lam", "lam"),
+        ("lams", "lám"),
+        ("lang", "lang"),
+        ("langs", "láng"),
+        ("an", "an"),
+        ("ans", "án"),
+        ("anf", "àn"),
+        ("ang", "ang"),
+        ("angs", "áng"),
+        ("acs", "ác"),
+        ("ats", "át"),
+        ("achs", "ách"),
+        ("anh", "anh"),
+        ("anhs", "ánh"),
+        ("anhr", "ảnh"),
+        ("em", "em"),
+        ("ems", "ém"),
+        ("en", "en"),
+        ("ens", "én"),
+        ("eng", "eng"),
+        ("eps", "ép"),
+        ("ets", "ét"),
+        ("its", "ít"),
+        ("in", "in"),
+        ("ins", "ín"),
+        ("ichs", "ích"),
+        ("ips", "íp"),
+        ("om", "om"),
+        ("oms", "óm"),
+        ("on", "on"),
+        ("ons", "ón"),
+        ("ong", "ong"),
+        ("ongs", "óng"),
+        ("ocs", "óc"),
+        ("ots", "ót"),
+        ("um", "um"),
+        ("ums", "úm"),
+        ("un", "un"),
+        ("uns", "ún"),
+        ("ung", "ung"),
+        ("ungs", "úng"),
+        ("ucs", "úc"),
+        ("uts", "út"),
+        ("uynh", "uynh"),
+        ("uynhs", "uýnh"),
+        ("uynhf", "uỳnh"),
+        ("uynhr", "uỷnh"),
+        ("uynhj", "uỵnh"),
+        ("uynhf", "uỳnh"),
+        ("uynhx", "uỹnh"),
+        ("uoot", "uôt"),
+        ("uoots", "uốt"),
+        ("uooc", "uôc"),
+        ("uoocs", "uốc"),
+        ("uoop", "uôp"),
+        ("uoops", "uốp"),
+        ("uoon", "uôn"),
+        ("uoons", "uốn"),
+        ("uoong", "uông"),
+        ("uoongs", "uống"),
+        ("uoom", "uôm"),
+        ("uooms", "uốm"),
+        ("uoongj", "uộng"),
+        ("uowngr", "ưởng"),
+        ("uowngs", "ướng"),
+        ("uowngf", "ường"),
+        ("uowngx", "ưỡng"),
+        ("uowngj", "ượng"),
+        ("uowcj", "ược"),
+        ("uowcs", "ước"),
+        ("uowcf", "uowcf"), // invalid: coda c only allows sắc/nặng
+        ("uowpt", "uowpt"), // invalid
+        // Edge cases for w placement
+        ("chuaw", "chưa"),
+        ("khuaw", "khưa"),
+        ("hoaw", "hoă"),
+        ("hoaj", "hoạ"),
+        ("hoaws", "hoắ"),
+        ("auw", "ău"),
+        ("iuw", "iuw"),
+        ("uuw", "ưu"),
+        ("uww", "uw"),
+        ("uwww", "uww"),
+        ("oow", "ơ"),
+        ("ooww", "oow"),
+        ("aaw", "aaw"),
+        ("aaww", "aaww"),
+        ("eew", "eew"),
+        ("eeww", "eeww"),
+        ("uow", "ươ"),
+        ("uoww", "uow"),
+        ("uowf", "ườ"),
+        ("uows", "ướ"),
+        ("uowj", "ượ"),
+        ("uowr", "ưở"),
+        ("uowx", "ưỡ"),
+        ("ow", "ơ"),
+        ("uw", "ư"),
+        ("aw", "ă"),
+        ("aa", "â"),
+        ("ee", "ê"),
+        ("oo", "ô"),
+        ("dd", "đ"),
+    ];
+
+    for (input, expected) in cases {
+        let mut e = UltraFastViEngine::new();
+        let got = type_seq(&mut e, input);
+        assert_eq!(
+            got, *expected,
+            "telex input {} expected {}, got {}",
+            input, expected, got
+        );
+    }
 }
 
 #[test]

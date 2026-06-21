@@ -216,6 +216,22 @@ impl UltraFastViEngine {
             return &self.out_buf;
         }
 
+        // Pre-composed Vietnamese characters (e.g. "ý", "ê", "đ") are decomposed
+        // into their ASCII keystroke equivalents so the engine can process copy-
+        // pasted or composed text the same way as live keystrokes.
+        if let Some((base, modifier, tone)) = decompose_vietnamese_char(key, self.input_method) {
+            let base_caps = base != base.to_ascii_lowercase();
+            self.push_raw_key(base.to_ascii_lowercase() as u8, base_caps);
+            if let Some(m) = modifier {
+                self.push_raw_key(m, false);
+            }
+            if let Some(t) = tone {
+                self.push_raw_key(t, false);
+            }
+            self.render_out_buf();
+            return &self.out_buf;
+        }
+
         let lower = key.to_ascii_lowercase();
         let caps = key != lower;
 
@@ -268,6 +284,108 @@ impl UltraFastViEngine {
         self.render_out_buf();
         &self.out_buf
     }
+}
+
+/// Decompose a pre-composed Vietnamese character into its ASCII keystroke
+/// components: base vowel/consonant, optional modifier key, and optional tone
+/// key. Returns `None` for non-Vietnamese characters so the caller can fall
+/// back to normal processing.
+fn decompose_vietnamese_char(c: char, method: InputMethod) -> Option<(char, Option<u8>, Option<u8>)> {
+    let is_upper = c.is_uppercase();
+    // Keystroke codes for the two supported input methods.
+    let (a_circumflex, e_circumflex, o_circumflex, breve, horn, dd, s, f, r, x, j) = match method {
+        InputMethod::Telex => (b'a', b'e', b'o', b'w', b'w', b'd', b's', b'f', b'r', b'x', b'j'),
+        InputMethod::Vni => (b'6', b'6', b'6', b'8', b'7', b'9', b'1', b'2', b'3', b'4', b'5'),
+    };
+    let (base, modifier, tone) = match c {
+        // a
+        'a' | 'A' => ('a', None, None),
+        'á' | 'Á' => ('a', None, Some(s)),
+        'à' | 'À' => ('a', None, Some(f)),
+        'ả' | 'Ả' => ('a', None, Some(r)),
+        'ã' | 'Ã' => ('a', None, Some(x)),
+        'ạ' | 'Ạ' => ('a', None, Some(j)),
+        'â' | 'Â' => ('a', Some(a_circumflex), None),
+        'ấ' | 'Ấ' => ('a', Some(a_circumflex), Some(s)),
+        'ầ' | 'Ầ' => ('a', Some(a_circumflex), Some(f)),
+        'ẩ' | 'Ẩ' => ('a', Some(a_circumflex), Some(r)),
+        'ẫ' | 'Ẫ' => ('a', Some(a_circumflex), Some(x)),
+        'ậ' | 'Ậ' => ('a', Some(a_circumflex), Some(j)),
+        'ă' | 'Ă' => ('a', Some(breve), None),
+        'ắ' | 'Ắ' => ('a', Some(breve), Some(s)),
+        'ằ' | 'Ằ' => ('a', Some(breve), Some(f)),
+        'ẳ' | 'Ẳ' => ('a', Some(breve), Some(r)),
+        'ẵ' | 'Ẵ' => ('a', Some(breve), Some(x)),
+        'ặ' | 'Ặ' => ('a', Some(breve), Some(j)),
+        // e
+        'e' | 'E' => ('e', None, None),
+        'é' | 'É' => ('e', None, Some(s)),
+        'è' | 'È' => ('e', None, Some(f)),
+        'ẻ' | 'Ẻ' => ('e', None, Some(r)),
+        'ẽ' | 'Ẽ' => ('e', None, Some(x)),
+        'ẹ' | 'Ẹ' => ('e', None, Some(j)),
+        'ê' | 'Ê' => ('e', Some(e_circumflex), None),
+        'ế' | 'Ế' => ('e', Some(e_circumflex), Some(s)),
+        'ề' | 'Ề' => ('e', Some(e_circumflex), Some(f)),
+        'ể' | 'Ể' => ('e', Some(e_circumflex), Some(r)),
+        'ễ' | 'Ễ' => ('e', Some(e_circumflex), Some(x)),
+        'ệ' | 'Ệ' => ('e', Some(e_circumflex), Some(j)),
+        // i
+        'i' | 'I' => ('i', None, None),
+        'í' | 'Í' => ('i', None, Some(s)),
+        'ì' | 'Ì' => ('i', None, Some(f)),
+        'ỉ' | 'Ỉ' => ('i', None, Some(r)),
+        'ĩ' | 'Ĩ' => ('i', None, Some(x)),
+        'ị' | 'Ị' => ('i', None, Some(j)),
+        // o
+        'o' | 'O' => ('o', None, None),
+        'ó' | 'Ó' => ('o', None, Some(s)),
+        'ò' | 'Ò' => ('o', None, Some(f)),
+        'ỏ' | 'Ỏ' => ('o', None, Some(r)),
+        'õ' | 'Õ' => ('o', None, Some(x)),
+        'ọ' | 'Ọ' => ('o', None, Some(j)),
+        'ô' | 'Ô' => ('o', Some(o_circumflex), None),
+        'ố' | 'Ố' => ('o', Some(o_circumflex), Some(s)),
+        'ồ' | 'Ồ' => ('o', Some(o_circumflex), Some(f)),
+        'ổ' | 'Ổ' => ('o', Some(o_circumflex), Some(r)),
+        'ỗ' | 'Ỗ' => ('o', Some(o_circumflex), Some(x)),
+        'ộ' | 'Ộ' => ('o', Some(o_circumflex), Some(j)),
+        'ơ' | 'Ơ' => ('o', Some(horn), None),
+        'ớ' | 'Ớ' => ('o', Some(horn), Some(s)),
+        'ờ' | 'Ờ' => ('o', Some(horn), Some(f)),
+        'ở' | 'Ở' => ('o', Some(horn), Some(r)),
+        'ỡ' | 'Ỡ' => ('o', Some(horn), Some(x)),
+        'ợ' | 'Ợ' => ('o', Some(horn), Some(j)),
+        // u
+        'u' | 'U' => ('u', None, None),
+        'ú' | 'Ú' => ('u', None, Some(s)),
+        'ù' | 'Ù' => ('u', None, Some(f)),
+        'ủ' | 'Ủ' => ('u', None, Some(r)),
+        'ũ' | 'Ũ' => ('u', None, Some(x)),
+        'ụ' | 'Ụ' => ('u', None, Some(j)),
+        'ư' | 'Ư' => ('u', Some(horn), None),
+        'ứ' | 'Ứ' => ('u', Some(horn), Some(s)),
+        'ừ' | 'Ừ' => ('u', Some(horn), Some(f)),
+        'ử' | 'Ử' => ('u', Some(horn), Some(r)),
+        'ữ' | 'Ữ' => ('u', Some(horn), Some(x)),
+        'ự' | 'Ự' => ('u', Some(horn), Some(j)),
+        // y
+        'y' | 'Y' => ('y', None, None),
+        'ý' | 'Ý' => ('y', None, Some(s)),
+        'ỳ' | 'Ỳ' => ('y', None, Some(f)),
+        'ỷ' | 'Ỷ' => ('y', None, Some(r)),
+        'ỹ' | 'Ỹ' => ('y', None, Some(x)),
+        'ỵ' | 'Ỵ' => ('y', None, Some(j)),
+        // d with stroke
+        'đ' | 'Đ' => ('d', Some(dd), None),
+        _ => return None,
+    };
+    let base = if is_upper {
+        base.to_ascii_uppercase()
+    } else {
+        base
+    };
+    Some((base, modifier, tone))
 }
 
 impl Default for UltraFastViEngine {

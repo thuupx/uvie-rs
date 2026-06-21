@@ -232,7 +232,7 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
     }, // uya
     NucleusEntry {
         seq: &['u', 'y', 'ê'],
-        tone_idx: 1,
+        tone_idx: 2,
     }, // uyê (e.g. quyết → nucleus=uyê, tone→ê)
     NucleusEntry {
         seq: &['u', 'y', 'u'],
@@ -355,8 +355,8 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
     }, // uâ - tone on â (chuẩn, tuần)
     NucleusEntry {
         seq: &['u', 'ê'],
-        tone_idx: 0,
-    }, // uê
+        tone_idx: 1,
+    }, // uê (quê → tone on ê)
     NucleusEntry {
         seq: &['u', 'y'],
         tone_idx: 1,
@@ -697,8 +697,8 @@ mod tests {
 
     #[test]
     fn nucleus_triphthong_uyê() {
-        // uyê → tone on ê (index 1): "quyết"
-        assert_eq!(nucleus_tone_target(&['u', 'y', 'ê']), Some(1));
+        // uyê → tone on ê (index 2): "quyết"
+        assert_eq!(nucleus_tone_target(&['u', 'y', 'ê']), Some(2));
     }
 
     #[test]

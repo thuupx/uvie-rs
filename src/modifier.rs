@@ -16,6 +16,7 @@ pub(crate) trait ModifierHandler {
     fn handle_vni_8(&mut self, caps: bool);
     fn handle_vni_9(&mut self, caps: bool);
     fn find_modifier_target_for_double_vowel(&self, b: u8) -> Option<usize>;
+    fn try_apply_w_non_cancel(&mut self, idx: usize, nucleus_start: usize, caps: bool) -> bool;
 }
 
 impl ModifierHandler for UltraFastViEngine {
@@ -41,8 +42,49 @@ impl ModifierHandler for UltraFastViEngine {
         // Find nucleus boundaries so w can modify vowels even with coda present
         let (_onset_end, nucleus_start, nucleus_end, _coda_start) = self.partition_syllable();
 
-        // First pass: look for w's modifier targets (a, o, u) in the nucleus
-        // Search backwards but only within nucleus bounds
+        let original_buf = self.buf.clone();
+
+        // Collect w-target candidates (u, o, a) in the nucleus, in backwards order.
+        // This matches the original search direction.
+        let mut candidates = [0usize; 24];
+        let mut candidate_count = 0usize;
+        for i in (nucleus_start..nucleus_end).rev() {
+            let syl = self.buf.get(i);
+            if matches!(syl.base, b'u' | b'o' | b'a') {
+                candidates[candidate_count] = i;
+                candidate_count += 1;
+            }
+        }
+
+        // First pass: try each candidate. If a target produces a valid Vietnamese
+        // syllable, keep it. This fixes cases like "chuaw" -> "chưa" where the
+        // backwards-first heuristic would otherwise modify the wrong vowel.
+        for idx in 0..candidate_count {
+            let i = candidates[idx];
+            self.buf = original_buf.clone();
+            if self.try_apply_w_non_cancel(i, nucleus_start, caps) && self.is_valid_vietnamese() {
+                return;
+            }
+        }
+
+        // No valid candidate found. If there are multiple candidates, the original
+        // behaviour (apply to the first/last vowel) could be wrong, so keep the
+        // buffer unchanged and fall through to cancellation / standalone handling.
+        // If there is only a single candidate and it can be applied (i.e. it does not
+        // already carry F_HORN), preserve the original behaviour by applying it even
+        // if the result is invalid (so double-w cancellation works for e.g.
+        // "showw" -> "show").
+        if candidate_count == 1 {
+            self.buf = original_buf.clone();
+            if self.try_apply_w_non_cancel(candidates[0], nucleus_start, caps) {
+                return;
+            }
+        }
+
+        // Restore original buffer before the cancellation and standalone passes.
+        self.buf = original_buf;
+
+        // Second pass: cancellation (target already has F_HORN, or existing 'w').
         for i in (nucleus_start..nucleus_end).rev() {
             let syl = self.buf.get(i);
             match syl.base {
@@ -50,9 +92,6 @@ impl ModifierHandler for UltraFastViEngine {
                     if self.is_u_glide(i) {
                         continue;
                     }
-                    // FIX: For "uuw" -> "ưu", skip 'u' that has another 'u' BEFORE it (in search direction)
-                    // Since we search backwards, i-1 is the "next" char in forward direction
-                    // This ensures w modifies the FIRST 'u' in a consecutive "uu" sequence
                     if i > nucleus_start && self.buf.get(i - 1).base == b'u' {
                         continue;
                     }
@@ -66,10 +105,6 @@ impl ModifierHandler for UltraFastViEngine {
                         self.reapply_tone_after_nucleus_change();
                         return;
                     }
-                    let updated = self.buf.get(i).clone().with_horn();
-                    self.buf.set(i, updated);
-                    self.reapply_tone_after_nucleus_change();
-                    return;
                 }
                 b'o' => {
                     if syl.flags & F_HORN != 0 {
@@ -89,17 +124,6 @@ impl ModifierHandler for UltraFastViEngine {
                         self.reapply_tone_after_nucleus_change();
                         return;
                     }
-                    let updated = self.buf.get(i).clone().with_horn();
-                    self.buf.set(i, updated);
-                    if i > 0 && i > nucleus_start {
-                        let prev = self.buf.get(i - 1);
-                        if prev.base == b'u' && prev.flags == 0 && !self.is_u_glide(i - 1) {
-                            let promoted = prev.clone().with_horn();
-                            self.buf.set(i - 1, promoted);
-                        }
-                    }
-                    self.reapply_tone_after_nucleus_change();
-                    return;
                 }
                 b'a' => {
                     if syl.flags & F_CIRCUMFLEX != 0 {
@@ -115,16 +139,12 @@ impl ModifierHandler for UltraFastViEngine {
                         self.reapply_tone_after_nucleus_change();
                         return;
                     }
-                    let updated = self.buf.get(i).clone().with_horn();
-                    self.buf.set(i, updated);
-                    self.reapply_tone_after_nucleus_change();
-                    return;
                 }
-                _ => continue,
+                _ => {}
             }
         }
 
-        // Second pass: look for existing 'w' with F_HORN (for cancellation)
+        // Third pass: look for existing 'w' with F_HORN (for cancellation)
         for i in (0..n).rev() {
             let syl = self.buf.get(i);
             if syl.base == b'w' && syl.flags & F_HORN != 0 {
@@ -153,6 +173,54 @@ impl ModifierHandler for UltraFastViEngine {
             self.reapply_tone_after_nucleus_change();
         } else {
             self.buf.push(Syl::literal(b'w', caps));
+        }
+    }
+
+    /// Apply the non-cancelling w modifier to a single nucleus target and return
+    /// true if the modification was applied. Does not touch candidates that
+    /// already carry F_HORN (those are handled in the cancellation pass).
+    fn try_apply_w_non_cancel(&mut self, idx: usize, nucleus_start: usize, _caps: bool) -> bool {
+        let syl = self.buf.get(idx);
+        if syl.flags & F_HORN != 0 {
+            return false;
+        }
+        match syl.base {
+            b'u' => {
+                if self.is_u_glide(idx) {
+                    return false;
+                }
+                // Skip the second 'u' in a consecutive "uu" inside the nucleus.
+                if idx > nucleus_start && self.buf.get(idx - 1).base == b'u' {
+                    return false;
+                }
+                let updated = self.buf.get(idx).clone().with_horn();
+                self.buf.set(idx, updated);
+                self.reapply_tone_after_nucleus_change();
+                true
+            }
+            b'o' => {
+                let updated = self.buf.get(idx).clone().with_horn();
+                self.buf.set(idx, updated);
+                if idx > 0 && idx > nucleus_start {
+                    let prev = self.buf.get(idx - 1);
+                    if prev.base == b'u' && prev.flags == 0 && !self.is_u_glide(idx - 1) {
+                        let promoted = prev.clone().with_horn();
+                        self.buf.set(idx - 1, promoted);
+                    }
+                }
+                self.reapply_tone_after_nucleus_change();
+                true
+            }
+            b'a' => {
+                if syl.flags & F_CIRCUMFLEX != 0 {
+                    return false;
+                }
+                let updated = self.buf.get(idx).clone().with_horn();
+                self.buf.set(idx, updated);
+                self.reapply_tone_after_nucleus_change();
+                true
+            }
+            _ => false,
         }
     }
 

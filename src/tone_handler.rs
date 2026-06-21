@@ -24,10 +24,16 @@ impl ToneHandler for UltraFastViEngine {
         }
 
         // Special 'r' heuristic: after certain onset consonants, 'r' is part of
-        // the onset (e.g. "tr", "br") - not a tone key.
+        // the onset (e.g. "tr", "br") - not a tone key. Only apply this when the
+        // previous character is actually inside the onset; if it is part of the
+        // nucleus or coda, 'r' must remain a tone key.
         if b == b'r' && n > 0 {
             let prev = self.buf.get(n - 1).base;
-            if matches!(prev, b't' | b'p' | b'f' | b'c' | b'b' | b'd' | b'g' | b'k') {
+            let (_, nucleus_start, _, _) = self.partition_syllable();
+            let prev_idx = n - 1;
+            if prev_idx < nucleus_start
+                && matches!(prev, b't' | b'p' | b'f' | b'c' | b'b' | b'd' | b'g' | b'k')
+            {
                 self.buf.push(Syl::literal(b'r', caps));
                 return;
             }
