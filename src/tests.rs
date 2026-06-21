@@ -28,31 +28,59 @@ fn type_seq_vni(seq: &str) -> String {
 fn regression_user_reported_words() {
     // chuaw -> chưa (w bubbles back to u and turns it into ư)
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "chuaw"), "chưa", "chuaw should produce chưa");
+    assert_eq!(
+        type_seq(&mut e, "chuaw"),
+        "chưa",
+        "chuaw should produce chưa"
+    );
 
     // chuyến / huyễn also need the standard Telex path to work
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "chuyenes"), "chuyến", "chuyenes should produce chuyến");
+    assert_eq!(
+        type_seq(&mut e, "chuyenes"),
+        "chuyến",
+        "chuyenes should produce chuyến"
+    );
 
     // chuýên -> chuyến (pre-accented y should be treated as base y)
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "chuýên"), "chuyến", "chuýên should produce chuyến");
+    assert_eq!(
+        type_seq(&mut e, "chuýên"),
+        "chuyến",
+        "chuýên should produce chuyến"
+    );
 
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "huyeenx"), "huyễn", "huyeenx should produce huyễn");
+    assert_eq!(
+        type_seq(&mut e, "huyeenx"),
+        "huyễn",
+        "huyeenx should produce huyễn"
+    );
 
     // huỹên -> huyễn (pre-accented y with ngã should be treated as base y)
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "huỹên"), "huyễn", "huỹên should produce huyễn");
+    assert_eq!(
+        type_seq(&mut e, "huỹên"),
+        "huyễn",
+        "huỹên should produce huyễn"
+    );
 
     // Same words in VNI mode with composed characters
     let mut e = UltraFastViEngine::new();
     e.set_input_method(InputMethod::Vni);
-    assert_eq!(type_seq(&mut e, "chuýên"), "chuyến", "VNI: chuýên should produce chuyến");
+    assert_eq!(
+        type_seq(&mut e, "chuýên"),
+        "chuyến",
+        "VNI: chuýên should produce chuyến"
+    );
 
     let mut e = UltraFastViEngine::new();
     e.set_input_method(InputMethod::Vni);
-    assert_eq!(type_seq(&mut e, "huỹên"), "huyễn", "VNI: huỹên should produce huyễn");
+    assert_eq!(
+        type_seq(&mut e, "huỹên"),
+        "huyễn",
+        "VNI: huỹên should produce huyễn"
+    );
 }
 
 #[test]
@@ -2389,7 +2417,11 @@ fn mid_nucleus_tone_for_iê_yê_uê() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "tieje"), "tiệ", "tieje should produce tiệ");
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "tiejen"), "tiện", "tiejen should produce tiện");
+    assert_eq!(
+        type_seq(&mut e, "tiejen"),
+        "tiện",
+        "tiejen should produce tiện"
+    );
 
     // Tone override after the delayed tone still works
     let mut e = UltraFastViEngine::new();

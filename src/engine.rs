@@ -290,12 +290,19 @@ impl UltraFastViEngine {
 /// components: base vowel/consonant, optional modifier key, and optional tone
 /// key. Returns `None` for non-Vietnamese characters so the caller can fall
 /// back to normal processing.
-fn decompose_vietnamese_char(c: char, method: InputMethod) -> Option<(char, Option<u8>, Option<u8>)> {
+fn decompose_vietnamese_char(
+    c: char,
+    method: InputMethod,
+) -> Option<(char, Option<u8>, Option<u8>)> {
     let is_upper = c.is_uppercase();
     // Keystroke codes for the two supported input methods.
     let (a_circumflex, e_circumflex, o_circumflex, breve, horn, dd, s, f, r, x, j) = match method {
-        InputMethod::Telex => (b'a', b'e', b'o', b'w', b'w', b'd', b's', b'f', b'r', b'x', b'j'),
-        InputMethod::Vni => (b'6', b'6', b'6', b'8', b'7', b'9', b'1', b'2', b'3', b'4', b'5'),
+        InputMethod::Telex => (
+            b'a', b'e', b'o', b'w', b'w', b'd', b's', b'f', b'r', b'x', b'j',
+        ),
+        InputMethod::Vni => (
+            b'6', b'6', b'6', b'8', b'7', b'9', b'1', b'2', b'3', b'4', b'5',
+        ),
     };
     let (base, modifier, tone) = match c {
         // a
