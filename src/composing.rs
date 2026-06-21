@@ -123,7 +123,8 @@ impl Composable for UltraFastViEngine {
                 && self.buf.get(buf_idx).flags & F_LITERAL == 0
                 && self.buf.get(buf_idx).flags & crate::syllable::F_HORN != 0;
             if is_dh && b == b'd' && raw_idx + 1 < self.raw_len && self.raw[raw_idx + 1] == b'd' {
-                let _ = self.out_buf.push('đ');
+                let is_upper = self.buf.get(buf_idx).flags & crate::syllable::F_CAPS != 0;
+                let _ = self.out_buf.push(if is_upper { 'Đ' } else { 'đ' });
                 raw_idx += 2;
                 buf_idx += 1;
             } else {

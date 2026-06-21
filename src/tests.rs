@@ -604,6 +604,10 @@ fn free_style_modifier_bubbling() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "noios"), "nối");
 
+    // oo modifier bubbling past tone key: noiso -> nối
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "noiso"), "nối");
+
     // Free-style ee: tieengs -> tiếng
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "tieengs"), "tiếng");
@@ -615,6 +619,10 @@ fn free_style_modifier_bubbling() {
     // dd modifier across consonants: bubbles to đan (valid Vietnamese)
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "dand"), "đan");
+
+    // oo modifier bubbling past tone key: loixo -> lỗi
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "loixo"), "lỗi");
 }
 
 #[test]
@@ -1994,6 +2002,25 @@ fn syl_structure_trigraph_ngh() {
 // ---------------------------------------------------------------------------
 // Uppercase / F_CAPS tests
 // ---------------------------------------------------------------------------
+
+#[test]
+fn uppercase_d_with_stroke() {
+    let mut e = UltraFastViEngine::new();
+    // Shift+D twice → Đ (uppercase d with stroke)
+    assert_eq!(type_seq(&mut e, "DD"), "Đ");
+
+    let mut e = UltraFastViEngine::new();
+    // Mixed case: first D uppercase, second lowercase → Đ
+    assert_eq!(type_seq(&mut e, "Dd"), "Đ");
+
+    let mut e = UltraFastViEngine::new();
+    // Both lowercase → đ
+    assert_eq!(type_seq(&mut e, "dd"), "đ");
+
+    let mut e = UltraFastViEngine::new();
+    // Passthrough: ĐB must keep uppercase Đ
+    assert_eq!(type_seq(&mut e, "DDB"), "ĐB");
+}
 
 #[test]
 fn uppercase_circumflex_oo() {

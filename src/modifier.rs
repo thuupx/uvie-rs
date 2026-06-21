@@ -2,7 +2,7 @@
 
 use crate::engine::UltraFastViEngine;
 use crate::modes::{IS_TONE_KEY, IS_VOWEL};
-use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_HORN, F_LITERAL, F_TONE_SET, Syl};
+use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_HORN, F_LITERAL, Syl};
 use crate::tone_handler::ToneHandler;
 use crate::validation::SyllableValidator;
 
@@ -291,22 +291,19 @@ impl ModifierHandler for UltraFastViEngine {
 
     #[inline]
     fn find_modifier_target_for_double_vowel(&self, b: u8) -> Option<usize> {
+        if self.raw_len >= 3 {
+            let prev = self.raw[self.raw_len - 2];
+            let prev2 = self.raw[self.raw_len - 3];
+            if self.mode.classify[prev as usize] & IS_TONE_KEY != 0 && prev2 == b {
+                return None;
+            }
+        }
+
         let n = self.buf.len();
-        let mut crossed_consonant = false;
         for i in (0..n).rev() {
             let s = self.buf.get(i);
             if s.base == b && s.flags & F_LITERAL == 0 && s.flags & F_HORN == 0 {
-                if s.flags & F_TONE_SET != 0 && !crossed_consonant {
-                    return None;
-                }
                 return Some(i);
-            }
-            let classify = self.mode.classify[s.base as usize];
-            if classify & IS_VOWEL == 0 && classify & IS_TONE_KEY == 0 && s.base != b'w' {
-                crossed_consonant = true;
-            }
-            if classify & IS_TONE_KEY != 0 {
-                return None;
             }
             if s.base == b'd' && s.flags & F_HORN != 0 {
                 return None;
