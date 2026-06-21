@@ -2365,6 +2365,37 @@ fn syl_structure_trigraph_ngh() {
     assert_eq!(e.syl_structure().nucleus_end, 4);
 }
 
+#[test]
+fn mid_nucleus_tone_for_iê_yê_uê() {
+    // Tone can be typed between the two vowels of an incomplete iê/yê/uê nucleus.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ieje"), "iệ", "ieje should produce iệ");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "iefe"), "iề", "iefe should produce iề");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "iere"), "iể", "iere should produce iể");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "iexe"), "iễ", "iexe should produce iễ");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "yefe"), "yề", "yefe should produce yề");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "yexe"), "yễ", "yexe should produce yễ");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ueje"), "uệ", "ueje should produce uệ");
+
+    // With onset and coda
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "tieje"), "tiệ", "tieje should produce tiệ");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "tiejen"), "tiện", "tiejen should produce tiện");
+
+    // Tone override after the delayed tone still works
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "iejes"), "iế", "iejes should produce iế");
+}
+
 // ---------------------------------------------------------------------------
 // Uppercase / F_CAPS tests
 // ---------------------------------------------------------------------------

@@ -363,7 +363,17 @@ impl ModifierHandler for UltraFastViEngine {
             let prev = self.raw[self.raw_len - 2];
             let prev2 = self.raw[self.raw_len - 3];
             if self.mode.classify[prev as usize] & IS_TONE_KEY != 0 && prev2 == b {
-                return None;
+                // Allow the tone key to sit between the two halves of an
+                // incomplete iê / yê / uê nucleus (e.g. Telex `ieje` -> iệ,
+                // `yefe` -> yề, `ueje` -> uệ). The pattern is i/y/u + e + tone + e.
+                let prev3 = if self.raw_len >= 4 {
+                    self.raw[self.raw_len - 4]
+                } else {
+                    0
+                };
+                if b != b'e' || !matches!(prev3, b'i' | b'y' | b'u') {
+                    return None;
+                }
             }
         }
 

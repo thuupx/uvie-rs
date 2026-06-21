@@ -3,7 +3,7 @@
 use crate::engine::UltraFastViEngine;
 use crate::modes::{IS_MODIFIER, IS_TONE_KEY, IS_VOWEL};
 use crate::modifier::ModifierHandler;
-use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_LITERAL, Syl};
+use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_LITERAL, F_TONE_SET, Syl};
 use crate::tone_handler::ToneHandler;
 use crate::validation::SyllableValidator;
 
@@ -15,6 +15,53 @@ pub(crate) trait Composable {
     fn push_raw_key(&mut self, b: u8, caps: bool);
     fn render_out_buf(&mut self);
     fn render_passthrough(&mut self);
+}
+
+impl UltraFastViEngine {
+    /// Support tones typed between the two vowels of an incomplete iê/yê/uê
+    /// nucleus. For example in Telex: `ieje` (i-e-j-e) should produce `iệ`,
+    /// `yefe` (y-e-f-e) should produce `yề`, `ueje` (u-e-j-e) should produce `uệ`.
+    #[inline]
+    fn apply_mid_nucleus_tone(&mut self, b: u8) {
+        if b != b'e' {
+            return;
+        }
+        let rl = self.raw_len;
+        if rl < 4 {
+            return;
+        }
+        let first = self.raw[rl - 4];
+        let mid = self.raw[rl - 3];
+        let tone_key = self.raw[rl - 2];
+        let last = self.raw[rl - 1];
+        if mid != b'e' || last != b'e' {
+            return;
+        }
+        if !matches!(first, b'i' | b'y' | b'u') {
+            return;
+        }
+        let tone_val = self.mode.tone[tone_key as usize];
+        if tone_val == 0 {
+            return;
+        }
+        // The literal tone key should be the last buffer entry because the
+        // second 'e' modified the previous vowel in place.
+        let Some(tone_syl) = self.buf.pop() else {
+            return;
+        };
+        if tone_syl.base != tone_key || tone_syl.flags & F_TONE_SET != 0 {
+            self.buf.push(tone_syl);
+            return;
+        }
+        if let Some(carrier) = self.tone_carrier_idx() {
+            let s = self.buf.get_mut(carrier);
+            s.tone = tone_val;
+            s.flags |= F_TONE_SET;
+            s.recompute_out();
+        } else {
+            self.buf.push(tone_syl);
+        }
+    }
 }
 
 impl Composable for UltraFastViEngine {
@@ -60,6 +107,7 @@ impl Composable for UltraFastViEngine {
                     let updated = syl.with_circumflex();
                     self.buf.set(target_idx, updated);
                     self.reapply_tone_after_nucleus_change();
+                    self.apply_mid_nucleus_tone(b);
                     return;
                 }
             }
