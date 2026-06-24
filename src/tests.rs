@@ -1359,11 +1359,13 @@ fn test_vcv_boundary_auto_commit() {
             "bô",
             "after second word: composing should be 'bô'"
         );
-        // committed_text accumulates across auto-commits: "nê" + "nâ" = "nênâ"
+        // commit_diff() clears diff_committed, so only the second word's
+        // auto-committed syllable remains. (Previously this leaked across
+        // commits as "nênâ", causing ghost characters on the next word.)
         assert_eq!(
             e.committed_text_diff(),
-            "nênâ",
-            "after second word: committed should accumulate both words"
+            "nâ",
+            "after second word: committed holds only this word's V-C-V prefix"
         );
     }
 }
@@ -2664,4 +2666,132 @@ fn test_double_consonant_onsets() {
     // nh onset
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "nhas"), "nhá");
+}
+
+// ===========================================================================
+// Ghost-character regression tests.
+// These cover the root-cause fix: backspace rebuilds the composing state from
+// a lossless keystroke log instead of replaying the lossy `self.raw` buffer,
+// and `commit_diff` clears `diff_committed` so V-C-V auto-committed text does
+// not leak into the next word.
+// ===========================================================================
+
+#[cfg(test)]
+mod ghost_regression_tests {
+    use crate::UltraFastViEngine;
+    use crate::diff::Diffable;
+
+    fn type_diff(e: &mut UltraFastViEngine, s: &str) -> String {
+        let mut screen = String::new();
+        for ch in s.chars() {
+            let (bs, suffix) = e.feed_diff(ch);
+            let sc: Vec<char> = screen.chars().collect();
+            screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+            screen.push_str(suffix);
+        }
+        screen
+    }
+
+    fn backspace(e: &mut UltraFastViEngine, screen: &mut String) {
+        let (bs, suffix) = e.backspace_diff();
+        let sc: Vec<char> = screen.chars().collect();
+        *screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(suffix);
+    }
+
+    #[test]
+    fn backspace_after_w_cancel_keeps_literal() {
+        let mut e = UltraFastViEngine::new();
+        let screen = type_diff(&mut e, "owwa");
+        assert_eq!(screen, "owa");
+
+        let mut screen = screen;
+        backspace(&mut e, &mut screen);
+        assert_eq!(
+            screen, "ow",
+            "backspace after double-w cancel must not reapply horn"
+        );
+        assert_eq!(e.current_composing_diff(), "ow");
+    }
+
+    // Double-tone cancel + backspace semantics (keystroke-order, consistent
+    // with "tooi" → "tô" → "to"): "ass" = a + s(sắc) + s(cancel) → visible "as".
+    // Backspace undoes the LAST keystroke (the cancel), so the tone is restored
+    // → "á". This is consistent with undoing one keystroke everywhere else
+    // (e.g. "tôi" + backspace undoes 'i' → "tô", not removing the whole "i").
+    #[test]
+    fn backspace_after_tone_cancel() {
+        let mut e = UltraFastViEngine::new();
+        let screen = type_diff(&mut e, "ass");
+        assert_eq!(screen, "as");
+
+        let mut screen = screen;
+        backspace(&mut e, &mut screen);
+        assert_eq!(screen, "á");
+        assert_eq!(e.current_composing_diff(), "á");
+    }
+
+    #[test]
+    fn commit_clears_diff_committed() {
+        let mut e = UltraFastViEngine::new();
+        type_diff(&mut e, "neeboo"); // V-C-V split → committed "nê"
+        assert_eq!(e.committed_text_diff(), "nê");
+        e.commit_diff();
+        assert_eq!(
+            e.committed_text_diff(),
+            "",
+            "commit must clear diff_committed"
+        );
+    }
+
+    #[test]
+    fn backspace_sequence_to_empty_is_consistent() {
+        let mut e = UltraFastViEngine::new();
+        let mut screen = type_diff(&mut e, "tooi");
+        assert_eq!(screen, "tôi");
+        for _ in 0..4 {
+            backspace(&mut e, &mut screen);
+        }
+        assert_eq!(screen, "");
+        assert!(!e.is_composing_diff());
+    }
+
+    #[test]
+    fn backspace_across_vcv_split_boundary() {
+        let mut e = UltraFastViEngine::new();
+        let mut screen = type_diff(&mut e, "neebo"); // "nêbo", committed "nê"
+        assert_eq!(screen, "nêbo");
+        // bs1: "nêb", bs2: "nê", bs3: pop committed → "n"
+        backspace(&mut e, &mut screen);
+        assert_eq!(screen, "nêb");
+        backspace(&mut e, &mut screen);
+        assert_eq!(screen, "nê");
+        backspace(&mut e, &mut screen);
+        assert_eq!(screen, "n");
+        // composing is gone once we cross into committed territory
+        assert_eq!(e.current_composing_diff(), "");
+    }
+
+    #[test]
+    fn backspace_after_vcv_then_retype_composes() {
+        let mut e = UltraFastViEngine::new();
+        let mut screen = type_diff(&mut e, "neebo"); // "nêbo"
+        backspace(&mut e, &mut screen); // "nêb"
+        assert_eq!(screen, "nêb");
+        // Retype 'a' → should compose with 'b', not be raw.
+        let (bs, suffix) = e.feed_diff('a');
+        let sc: Vec<char> = screen.chars().collect();
+        screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+        screen.push_str(suffix);
+        assert!(
+            screen.ends_with("ba")
+                || screen.ends_with("bá")
+                || screen.ends_with("bà")
+                || screen.ends_with("bả")
+                || screen.ends_with("bã")
+                || screen.ends_with("bạ"),
+            "retype after backspace must compose, got: {screen}"
+        );
+        assert_eq!(e.raw_len(), e.raw_chars_len());
+    }
 }

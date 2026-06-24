@@ -11,7 +11,16 @@ use crate::modes::{IS_TONE_KEY, Mode};
 /// Diff-mode state: tracks what's on screen vs what the engine produced.
 pub struct DiffState {
     /// Raw keystroke buffer for feed_diff (chars, not bytes; needed for V-C-V split).
+    /// This is the "live" buffer used by the forward path; it is mutated by
+    /// double-tone-cancel (swap+truncate) and V-C-V split (replaced by the new
+    /// syllable), so it is NOT a faithful record of what the user typed.
     pub raw_chars: CharVec<24>,
+    /// Lossless keystroke log for the current *composing* portion only.
+    /// Unlike `raw_chars`, this is NEVER truncated/swap'd on double-tone-cancel,
+    /// so backspace can faithfully rebuild the composing state by replaying it.
+    /// It is reset on word boundary, full-buffer, V-C-V split (set to the new
+    /// syllable, mirroring `raw_chars`), commit and reset.
+    pub key_log: CharVec<24>,
     /// Composing text currently visible on screen (for diffing).
     pub prev_rendered: OutBuffer,
     /// The inner engine's true last render (diff baseline).
@@ -38,6 +47,7 @@ impl DiffState {
     pub fn new() -> Self {
         Self {
             raw_chars: CharVec::new(),
+            key_log: CharVec::new(),
             prev_rendered: new_out_buffer(),
             prev_inner_render: new_out_buffer(),
             last_valid_raw_len: 0,
@@ -50,6 +60,7 @@ impl DiffState {
 
     pub fn clear(&mut self) {
         self.raw_chars.clear();
+        self.key_log.clear();
         self.prev_rendered.clear();
         self.prev_inner_render.clear();
         self.last_valid_raw_len = 0;
@@ -75,6 +86,110 @@ pub trait Diffable {
 
 impl Diffable for UltraFastViEngine {
     fn feed_diff(&mut self, ch: char) -> (usize, &str) {
+        // Append to the lossless keystroke log before running the core pipeline.
+        // The core may clear/truncate `key_log` on word boundary, full-buffer or
+        // V-C-V split so that it always mirrors the *composing* portion only.
+        // `key_log` is NEVER truncated on double-tone-cancel (unlike `raw_chars`),
+        // which is what lets `backspace_diff` faithfully rebuild the state.
+        let _ = self.diff.key_log.try_push(ch);
+        self.feed_diff_core(ch)
+    }
+
+    fn backspace_diff(&mut self) -> (usize, &str) {
+        // No composing keystrokes left → fall back to popping auto-committed text
+        // (V-C-V split output) one rendered char at a time, matching the screen.
+        // `key_log` is the source of truth for the composing portion; when it is
+        // empty the composing region is gone and we erase from `diff_committed`.
+        if self.diff.key_log.is_empty() {
+            if !self.diff.diff_committed.is_empty() {
+                self.diff.diff_committed.pop();
+                self.diff.diff_suffix.clear();
+                return (1, &self.diff.diff_suffix);
+            }
+            self.diff.diff_suffix.clear();
+            return (0, &self.diff.diff_suffix);
+        }
+
+        // Snapshot the on-screen composing text *before* the rebuild.
+        let prev = self.diff.prev_rendered.clone();
+
+        // Drop the last logical keystroke and rebuild the composing portion from
+        // the lossless `key_log`. Replaying through `feed_diff_core` re-runs every
+        // cancel / expansion faithfully, so the rebuilt state is exact — unlike
+        // the old `self.backspace()` which replayed the lossy `self.raw` buffer
+        // and re-applied modifiers the user had deliberately cancelled.
+        self.diff.key_log.pop();
+        let log: CharVec<24> = self.diff.key_log.iter().copied().collect();
+        self.rebuild_composing(&log);
+
+        // Diff the old vs new *composing* text. `diff_committed` is untouched by
+        // the rebuild, so the committed prefix on screen stays and only the
+        // composing suffix changes — exactly what the host expects.
+        let new = self.diff.prev_rendered.clone();
+        let (bs, _) = Self::diff_into(&prev, &new, &mut self.diff.diff_suffix);
+        (bs, &self.diff.diff_suffix)
+    }
+
+    fn commit_diff(&mut self) -> (usize, &str) {
+        self.buf.clear();
+        self.raw_len = 0;
+        self.out_buf.clear();
+        self.diff.raw_chars.clear();
+        self.diff.key_log.clear();
+        self.diff.prev_rendered.clear();
+        self.diff.prev_inner_render.clear();
+        self.diff.last_valid_raw_len = 0;
+        self.diff.last_valid_coda_start = 0;
+        self.diff.last_valid_out.clear();
+        // A word has just been finalised: the V-C-V auto-committed portion of
+        // this word must not survive into the next word, otherwise it leaks onto
+        // the following word as ghost characters and corrupts macro matching.
+        self.diff.diff_committed.clear();
+        self.diff.diff_suffix.clear();
+        (0, &self.diff.diff_suffix)
+    }
+
+    fn reset_diff(&mut self) {
+        self.buf.clear();
+        self.raw_len = 0;
+        self.out_buf.clear();
+        self.diff.clear();
+    }
+
+    fn is_composing_diff(&self) -> bool {
+        // Account for both the live composing keystrokes and any auto-committed
+        // V-C-V text that is still on screen; otherwise the host can think the
+        // engine is idle while committed text remains, skipping needed resets.
+        !self.diff.key_log.is_empty() || !self.diff.diff_committed.is_empty()
+    }
+
+    fn current_composing_diff(&self) -> &str {
+        &self.diff.prev_rendered
+    }
+
+    fn committed_text_diff(&self) -> &str {
+        &self.diff.diff_committed
+    }
+
+    fn prev_inner_render_debug(&self) -> &str {
+        &self.diff.prev_inner_render
+    }
+
+    fn prev_rendered_debug(&self) -> &str {
+        &self.diff.prev_rendered
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Core feed pipeline + backspace rebuild helpers.
+//
+// `feed_diff_core` is the forward pipeline shared by the public `feed_diff`
+// (which appends to `key_log` first) and by `rebuild_composing` (which does
+// not). Keeping the append out of the core lets backspace replay keystrokes
+// without double-appending to the log.
+// ---------------------------------------------------------------------------
+impl UltraFastViEngine {
+    pub(crate) fn feed_diff_core(&mut self, ch: char) -> (usize, &str) {
         // Word boundary: commit composing word, clear state, return char directly.
         if Self::is_word_boundary(ch) {
             self.buf.clear();
@@ -94,11 +209,13 @@ impl Diffable for UltraFastViEngine {
             self.raw_len = 0;
             self.out_buf.clear();
             self.diff.raw_chars.clear();
+            self.diff.key_log.clear();
             self.diff.prev_inner_render.clear();
             self.diff.last_valid_raw_len = 0;
             self.diff.last_valid_coda_start = 0;
             self.diff.last_valid_out.clear();
             let _ = self.diff.raw_chars.try_push(ch);
+            let _ = self.diff.key_log.try_push(ch);
             self.feed(ch);
             let new_composed = self.out_buf.clone();
             let bs = screen_before_len;
@@ -117,6 +234,10 @@ impl Diffable for UltraFastViEngine {
         let raw_len_after = self.raw_len;
 
         // Double-tone-cancel detection.
+        // NOTE: `key_log` is intentionally NOT truncated here. It keeps the full
+        // keystroke sequence (including the cancelling key) so that a later
+        // backspace can replay it and re-trigger the cancel faithfully. Only
+        // `raw_chars` (the live, lossy buffer) is swap+truncate'd.
         let double_cancel_fired =
             raw_len_after == raw_len_before && !self.diff.raw_chars.is_empty();
         if double_cancel_fired {
@@ -211,6 +332,11 @@ impl Diffable for UltraFastViEngine {
                 );
 
                 self.diff.raw_chars = new_syl_raw;
+                // Mirror the composing portion into `key_log` so backspace can
+                // rebuild exactly this syllable. The committed portion's
+                // keystrokes are dropped from the log (its rendered form lives
+                // on in `diff_committed`).
+                self.diff.key_log = self.diff.raw_chars.iter().copied().collect();
                 // CRITICAL FIX: Sync raw_len with diff.raw_chars after V-C-V split
                 // Without this, backspace() will use wrong indices when replaying keystrokes
                 self.raw_len = self.diff.raw_chars.len();
@@ -245,109 +371,42 @@ impl Diffable for UltraFastViEngine {
         (bs, &self.diff.diff_suffix)
     }
 
-    fn backspace_diff(&mut self) -> (usize, &str) {
-        if self.diff.raw_chars.is_empty() {
-            if !self.diff.diff_committed.is_empty() {
-                self.diff.diff_committed.pop();
-                self.diff.diff_suffix.clear();
-                return (1, &self.diff.diff_suffix);
-            }
-            self.diff.diff_suffix.clear();
-            return (0, &self.diff.diff_suffix);
-        }
-        self.diff.raw_chars.pop();
-        let prev = self.diff.prev_rendered.clone();
-        self.backspace();
-        // Sync raw_len with diff.raw_chars after backspace
-        self.raw_len = self.diff.raw_chars.len();
-        let new_composed = self.out_buf.clone();
-        self.diff.prev_inner_render.clear();
-        let _ = self.diff.prev_inner_render.push_str(&new_composed);
-
-        if self.diff.raw_chars.is_empty() {
-            self.buf.clear();
-            self.raw_len = 0;
-            self.out_buf.clear();
-            self.diff.last_valid_raw_len = 0;
-            self.diff.last_valid_coda_start = 0;
-            self.diff.last_valid_out.clear();
-            let (bs, _) = Self::diff_into(&prev, &new_composed, &mut self.diff.diff_suffix);
-            self.diff.prev_rendered.clear();
-            self.diff.prev_inner_render.clear();
-            return (bs, &self.diff.diff_suffix);
-        }
-
-        let is_raw = Self::is_raw_passthrough_slice(&self.diff.raw_chars, &new_composed);
-        if is_raw {
-            self.diff.last_valid_raw_len = 0;
-            self.diff.last_valid_coda_start = 0;
-            self.diff.last_valid_out.clear();
-        } else {
-            self.diff.last_valid_raw_len = self.diff.raw_chars.len();
-            self.diff.last_valid_coda_start = Self::raw_coda_start(&self.diff.raw_chars);
-            self.diff.last_valid_out.clear();
-            let _ = self.diff.last_valid_out.push_str(&new_composed);
-        }
-        let (bs, _) = Self::diff_into(&prev, &new_composed, &mut self.diff.diff_suffix);
-        self.diff.prev_rendered.clear();
-        let _ = self.diff.prev_rendered.push_str(&new_composed);
-
-        // Debug validation: ensure raw_len stays in sync with diff.raw_chars
-        #[cfg(debug_assertions)]
-        {
-            if self.raw_len != self.diff.raw_chars.len() {
-                panic!(
-                    "raw_len ({}) != diff.raw_chars.len() ({}) after backspace_diff",
-                    self.raw_len,
-                    self.diff.raw_chars.len()
-                );
-            }
-        }
-
-        (bs, &self.diff.diff_suffix)
-    }
-
-    fn commit_diff(&mut self) -> (usize, &str) {
+    /// Rebuild the composing portion of the engine from a lossless keystroke log.
+    ///
+    /// Resets the core engine and the diff *composing* state, then replays `log`
+    /// through `feed_diff_core`. `diff_committed` and `key_log` are intentionally
+    /// preserved: the committed V-C-V prefix is still on screen, and `key_log`
+    /// was already updated by the caller (`backspace_diff`).
+    ///
+    /// Because `log` is always a single composing syllable (the V-C-V split point
+    /// starts at a consonant), replaying it cannot re-trigger a V-C-V split, so
+    /// `key_log` is not truncated here. Cancels/expansions are re-applied exactly
+    /// as in the forward path, converging `raw_chars`, `prev_rendered`,
+    /// `last_valid_*` and the core `buf`/`raw`/`raw_len`/`out_buf` to a single
+    /// consistent state — eliminating the "lossy replay" ghost-character bug.
+    pub(crate) fn rebuild_composing(&mut self, log: &[char]) {
+        // Reset the core engine to a clean slate (mirrors `clear()` minus diff).
         self.buf.clear();
         self.raw_len = 0;
         self.out_buf.clear();
+        self.committed.clear();
+        self.syl_structure.clear();
+
+        // Reset diff composing state only.
         self.diff.raw_chars.clear();
         self.diff.prev_rendered.clear();
         self.diff.prev_inner_render.clear();
         self.diff.last_valid_raw_len = 0;
         self.diff.last_valid_coda_start = 0;
         self.diff.last_valid_out.clear();
-        // NOTE: diff_committed is NOT cleared here - it accumulates across commits
-        // It only gets cleared on reset_diff() or word boundary (via diff.clear())
-        self.diff.diff_suffix.clear();
-        (0, &self.diff.diff_suffix)
-    }
 
-    fn reset_diff(&mut self) {
-        self.buf.clear();
-        self.raw_len = 0;
-        self.out_buf.clear();
-        self.diff.clear();
-    }
-
-    fn is_composing_diff(&self) -> bool {
-        !self.diff.raw_chars.is_empty()
-    }
-
-    fn current_composing_diff(&self) -> &str {
-        &self.diff.prev_rendered
-    }
-
-    fn committed_text_diff(&self) -> &str {
-        &self.diff.diff_committed
-    }
-
-    fn prev_inner_render_debug(&self) -> &str {
-        &self.diff.prev_inner_render
-    }
-
-    fn prev_rendered_debug(&self) -> &str {
-        &self.diff.prev_rendered
+        // Replay the surviving keystrokes through the core pipeline. This does
+        // not touch `key_log` (the wrapper owns appends; V-C-V/full-buffer cannot
+        // fire for a single syllable), so the log stays intact for the next
+        // backspace.
+        for &c in log {
+            let _ = self.feed_diff_core(c);
+        }
     }
 }
 
