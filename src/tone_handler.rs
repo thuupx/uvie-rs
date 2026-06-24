@@ -71,6 +71,14 @@ impl ToneHandler for UltraFastViEngine {
         let existing = self.buf.get(carrier_idx);
         let already_has_tone = existing.flags & F_TONE_SET != 0;
 
+        // Tone cancel key (e.g. Telex 'z', tone_val == 0): only meaningful
+        // when there is an existing tone to cancel. If no tone is set yet,
+        // treat the key as a plain consonant so words like "azure" work.
+        if tone_val == 0 && !already_has_tone {
+            self.buf.push(Syl::consonant(b, caps));
+            return;
+        }
+
         if already_has_tone && existing.tone == tone_val && existing.flags & F_LITERAL == 0 {
             // Double-same-tone-key: cancel tone.
             let reverted = {

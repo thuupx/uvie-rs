@@ -18,14 +18,17 @@ pub(crate) trait Composable {
 }
 
 impl UltraFastViEngine {
-    /// Support tones typed between the two vowels of an incomplete iê/yê/uê
-    /// nucleus. For example in Telex: `ieje` (i-e-j-e) should produce `iệ`,
-    /// `yefe` (y-e-f-e) should produce `yề`, `ueje` (u-e-j-e) should produce `uệ`.
+    /// Support tones typed between the two vowels of an incomplete circumflex
+    /// nucleus. In Telex the circumflex is produced by doubling the vowel
+    /// (aa→â, ee→ê, oo→ô), and users often type the tone key between the two
+    /// halves: `aja`→ậ, `ojo`→ộ, `ieje`→iệ, `yefe`→yề, `ueje`→uệ.
+    ///
+    /// This handles three patterns:
+    /// - `X-e-tone-e`  → iê/yê/uê with mid tone (existing)
+    /// - `a-tone-a`    → â with mid tone (new)
+    /// - `o-tone-o`    → ô with mid tone (new)
     #[inline]
     fn apply_mid_nucleus_tone(&mut self, b: u8) {
-        if b != b'e' {
-            return;
-        }
         let rl = self.raw_len;
         if rl < 4 {
             return;
@@ -34,18 +37,49 @@ impl UltraFastViEngine {
         let mid = self.raw[rl - 3];
         let tone_key = self.raw[rl - 2];
         let last = self.raw[rl - 1];
-        if mid != b'e' || last != b'e' {
+
+        // Determine which double-vowel pattern this matches.
+        // - iê/yê/uê: mid == 'e', last == 'e', first in {i,y,u}
+        // - ê (bare): mid == 'e', last == 'e', first == 'e' (no onset)
+        //   NOTE: we do NOT allow consonant onsets for the ê pattern because
+        //   it conflicts with English words like "reset", "telex" where the
+        //   consonant between two e's is not a tone key.
+        // - â:        mid == 'a', last == 'a' (any onset)
+        // - ô:        mid == 'o', last == 'o' (any onset)
+        let is_ie_pattern = mid == b'e' && last == b'e' && matches!(first, b'i' | b'y' | b'u');
+        let is_ee_pattern = mid == b'e' && last == b'e' && first == b'e';
+        let is_aa_pattern = mid == b'a' && last == b'a';
+        let is_oo_pattern = mid == b'o' && last == b'o';
+
+        if !is_ie_pattern && !is_ee_pattern && !is_aa_pattern && !is_oo_pattern {
             return;
         }
-        if !matches!(first, b'i' | b'y' | b'u') {
+
+        // The triggering keystroke must be the doubled vowel itself.
+        if b != mid {
             return;
         }
+
+        // The key between the two vowels must actually be a tone key.
+        // Without this, consonants like 'l' in "telex" (t-e-l-e) would be
+        // misidentified as tone keys and consumed.
+        if self.mode.classify[tone_key as usize] & IS_TONE_KEY == 0 {
+            return;
+        }
+
         let tone_val = self.mode.tone[tone_key as usize];
         if tone_val == 0 {
+            // Tone cancel key (e.g. Telex 'z', tone_val == 0): do nothing.
+            // With the handle_tone_key fix, 'z' is pushed as a consonant when
+            // no tone is set, so it stays in the buffer and the syllable
+            // becomes invalid → passthrough (e.g. "thaza" → "thaza").
+            // If a tone WAS set, handle_tone_key already cancelled it and 'z'
+            // is not in the buffer, so there's nothing to do here either.
             return;
         }
+
         // The literal tone key should be the last buffer entry because the
-        // second 'e' modified the previous vowel in place.
+        // second vowel modified the previous vowel in place (aa→â, etc.).
         let Some(tone_syl) = self.buf.pop() else {
             return;
         };
