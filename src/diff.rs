@@ -35,6 +35,10 @@ pub struct DiffState {
     pub diff_committed: OutBuffer,
     /// Scratch buffer backing the &str returned by feed_diff/backspace_diff.
     pub diff_suffix: OutBuffer,
+    /// Scratch buffer for optimistic candidate (avoids heap alloc per keystroke).
+    pub scratch_optimistic: OutBuffer,
+    /// Scratch buffer for display_composed (avoids heap alloc per keystroke).
+    pub scratch_display: OutBuffer,
 }
 
 impl Default for DiffState {
@@ -55,6 +59,8 @@ impl DiffState {
             last_valid_out: new_out_buffer(),
             diff_committed: new_out_buffer(),
             diff_suffix: new_out_buffer(),
+            scratch_optimistic: new_out_buffer(),
+            scratch_display: new_out_buffer(),
         }
     }
 
@@ -68,6 +74,8 @@ impl DiffState {
         self.last_valid_out.clear();
         self.diff_committed.clear();
         self.diff_suffix.clear();
+        self.scratch_optimistic.clear();
+        self.scratch_display.clear();
     }
 }
 
@@ -217,7 +225,8 @@ impl UltraFastViEngine {
             let _ = self.diff.raw_chars.try_push(ch);
             let _ = self.diff.key_log.try_push(ch);
             self.feed(ch);
-            let new_composed = self.out_buf.clone();
+            // Swap out_buf into prev_rendered (zero-alloc).
+            let new_composed = core::mem::take(&mut self.out_buf);
             let bs = screen_before_len;
             self.diff.diff_suffix.clear();
             let _ = self.diff.diff_suffix.push_str(&new_composed);
@@ -253,7 +262,9 @@ impl UltraFastViEngine {
             self.diff.last_valid_out.clear();
         }
 
-        let new_composed = self.out_buf.clone();
+        // Swap out_buf into new_composed (zero-alloc, avoids String::clone).
+        let mut new_composed = new_out_buffer();
+        core::mem::swap(&mut new_composed, &mut self.out_buf);
         let is_now_raw = Self::is_raw_passthrough_slice(&self.diff.raw_chars, &new_composed);
 
         if !is_now_raw {
@@ -267,8 +278,10 @@ impl UltraFastViEngine {
         // Only use it when the valid Vietnamese syllable had no coda yet;
         // otherwise the screen and the engine's true state diverge, causing ghost characters.
         let ch_is_tone = Self::is_tone_key_in_mode(ch, self.mode);
-        let mut optimistic_candidate = self.diff.last_valid_out.clone();
-        let _ = optimistic_candidate.push(ch);
+        // Reuse scratch buffer instead of cloning last_valid_out.
+        self.diff.scratch_optimistic.clear();
+        let _ = self.diff.scratch_optimistic.push_str(&self.diff.last_valid_out);
+        let _ = self.diff.scratch_optimistic.push(ch);
         let is_optimistic = is_now_raw
             && !self.diff.last_valid_out.is_empty()
             && !ch_is_tone
@@ -278,21 +291,17 @@ impl UltraFastViEngine {
             )
             && self.diff.last_valid_coda_start == self.diff.last_valid_raw_len;
 
-        let display_composed = if is_optimistic {
-            optimistic_candidate
+        // Build display_composed in scratch_display (avoids clone).
+        self.diff.scratch_display.clear();
+        if is_optimistic {
+            let _ = self.diff.scratch_display.push_str(&self.diff.scratch_optimistic);
         } else {
-            new_composed.clone()
-        };
+            let _ = self.diff.scratch_display.push_str(&new_composed);
+        }
+        let display_composed = &self.diff.scratch_display;
 
-        // Diff baseline.
-        let prev_was_optimistic = self.diff.prev_rendered != self.diff.prev_inner_render;
-        let diff_baseline = if !is_optimistic && prev_was_optimistic {
-            // When optimistic display is cancelled, diff from the optimistic display
-            // (prev_rendered) to the new output, since that's what the user sees.
-            self.diff.prev_rendered.clone()
-        } else {
-            self.diff.prev_rendered.clone()
-        };
+        // Diff baseline: prev_rendered is used as-is (no clone needed — we
+        // diff from it, then overwrite it below).
         self.diff.prev_inner_render.clear();
         let _ = self.diff.prev_inner_render.push_str(&new_composed);
 
@@ -321,13 +330,16 @@ impl UltraFastViEngine {
                 for &c in new_syl_raw.iter() {
                     self.feed(c);
                 }
-                let new_composed2 = self.out_buf.clone();
+                // Swap out_buf into new_composed2 (zero-alloc).
+                let new_composed2 = core::mem::take(&mut self.out_buf);
 
-                let mut full_screen = committed_out.clone();
-                let _ = full_screen.push_str(&new_composed2);
+                // Build full_screen in scratch_optimistic (reused buffer).
+                self.diff.scratch_optimistic.clear();
+                let _ = self.diff.scratch_optimistic.push_str(&committed_out);
+                let _ = self.diff.scratch_optimistic.push_str(&new_composed2);
                 let (bs, _) = Self::diff_into(
                     &self.diff.prev_rendered,
-                    &full_screen,
+                    &self.diff.scratch_optimistic,
                     &mut self.diff.diff_suffix,
                 );
 
@@ -360,14 +372,15 @@ impl UltraFastViEngine {
             }
         }
 
-        // Normal path: diff from baseline → display_composed.
+        // Normal path: diff from prev_rendered → display_composed.
+        // No clone needed — we diff from prev_rendered then overwrite it.
         let (bs, _) = Self::diff_into(
-            &diff_baseline,
-            &display_composed,
+            &self.diff.prev_rendered,
+            display_composed,
             &mut self.diff.diff_suffix,
         );
         self.diff.prev_rendered.clear();
-        let _ = self.diff.prev_rendered.push_str(&display_composed);
+        let _ = self.diff.prev_rendered.push_str(display_composed);
         (bs, &self.diff.diff_suffix)
     }
 
@@ -413,17 +426,31 @@ impl UltraFastViEngine {
 // Static helper methods on UltraFastViEngine used by the diff module.
 impl UltraFastViEngine {
     /// Compute minimal diff from `prev` → `new`, writing suffix into `out`.
+    ///
+    /// Returns `(backspaces, suffix_len)`. The caller sends `backspaces`
+    /// delete keys then types the `suffix` chars to transform `prev` → `new`.
     pub(crate) fn diff_into(prev: &str, new: &str, out: &mut OutBuffer) -> (usize, usize) {
+        // Single-pass: count common prefix and track prev char count
+        // simultaneously, avoiding the double `.chars().count()` iteration.
         let mut common = 0usize;
+        let mut prev_count = 0usize;
         let mut prev_iter = prev.chars();
         let mut new_iter = new.chars();
         loop {
-            match (prev_iter.next(), new_iter.next()) {
+            let p = prev_iter.next();
+            if p.is_some() {
+                prev_count += 1;
+            }
+            match (p, new_iter.next()) {
                 (Some(a), Some(b)) if a == b => common += 1,
                 _ => break,
             }
         }
-        let backspaces = prev.chars().count() - common;
+        // Count remaining prev chars (after the common prefix)
+        for _ in prev_iter {
+            prev_count += 1;
+        }
+        let backspaces = prev_count - common;
         out.clear();
         for c in new.chars().skip(common) {
             let _ = out.push(c);
@@ -493,14 +520,25 @@ impl UltraFastViEngine {
         0
     }
 
-    /// Re-render a slice of chars through a fresh engine and return rendered output.
+    /// Re-render a slice of chars through the engine and return rendered output.
+    ///
+    /// Uses a thread-local scratch engine to avoid allocating a fresh
+    /// `UltraFastViEngine` (which includes a 24-entry SylBuf + 128-byte
+    /// OutBuffer) on every V-C-V split.
     pub(crate) fn rerender_chars(raw: &[char], mode: &'static Mode) -> OutBuffer {
-        let mut eng = UltraFastViEngine::new();
-        eng.mode = mode;
-        for &c in raw {
-            eng.feed(c);
+        thread_local! {
+            static SCRATCH: std::cell::RefCell<UltraFastViEngine> =
+                std::cell::RefCell::new(UltraFastViEngine::new());
         }
-        eng.out_buf
+        SCRATCH.with(|s| {
+            let mut eng = s.borrow_mut();
+            eng.clear();
+            eng.mode = mode;
+            for &c in raw {
+                eng.feed(c);
+            }
+            eng.out_buf.clone()
+        })
     }
 
     #[inline]

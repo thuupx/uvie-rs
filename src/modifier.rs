@@ -42,10 +42,7 @@ impl ModifierHandler for UltraFastViEngine {
         // Find nucleus boundaries so w can modify vowels even with coda present
         let (_onset_end, nucleus_start, nucleus_end, _coda_start) = self.partition_syllable();
 
-        let original_buf = self.buf.clone();
-
         // Collect w-target candidates (u, o, a) in the nucleus, in backwards order.
-        // This matches the original search direction.
         let mut candidates = [0usize; 24];
         let mut candidate_count = 0usize;
         for i in (nucleus_start..nucleus_end).rev() {
@@ -59,30 +56,42 @@ impl ModifierHandler for UltraFastViEngine {
         // First pass: try each candidate. If a target produces a valid Vietnamese
         // syllable, keep it. This fixes cases like "chuaw" -> "chưa" where the
         // backwards-first heuristic would otherwise modify the wrong vowel.
+        //
+        // Optimization: instead of cloning the entire SylBuf (192 bytes) for
+        // each candidate, we snapshot only the 2 entries that could change
+        // (the target + the tone carrier) and restore them on failure.
         for idx in 0..candidate_count {
             let i = candidates[idx];
-            self.buf = original_buf.clone();
+            // Snapshot the target and its neighbor (reapply_tone may touch
+            // a different index).
+            let snap_i = *self.buf.get(i);
+            let snap_len = self.buf.len();
             if self.try_apply_w_non_cancel(i, nucleus_start, caps) && self.is_valid_vietnamese() {
                 return;
             }
-        }
-
-        // No valid candidate found. If there are multiple candidates, the original
-        // behaviour (apply to the first/last vowel) could be wrong, so keep the
-        // buffer unchanged and fall through to cancellation / standalone handling.
-        // If there is only a single candidate and it can be applied (i.e. it does not
-        // already carry F_HORN), preserve the original behaviour by applying it even
-        // if the result is invalid (so double-w cancellation works for e.g.
-        // "showw" -> "show").
-        if candidate_count == 1 {
-            self.buf = original_buf.clone();
-            if self.try_apply_w_non_cancel(candidates[0], nucleus_start, caps) {
-                return;
+            // Restore: undo any changes made by try_apply_w_non_cancel.
+            self.buf.set(i, snap_i);
+            while self.buf.len() > snap_len {
+                self.buf.pop();
             }
         }
 
-        // Restore original buffer before the cancellation and standalone passes.
-        self.buf = original_buf;
+        // No valid candidate found. If there is only a single candidate and it
+        // can be applied (i.e. it does not already carry F_HORN), preserve the
+        // original behaviour by applying it even if the result is invalid (so
+        // double-w cancellation works for e.g. "showw" -> "show").
+        if candidate_count == 1 {
+            let i = candidates[0];
+            let snap_i = *self.buf.get(i);
+            let snap_len = self.buf.len();
+            if self.try_apply_w_non_cancel(i, nucleus_start, caps) {
+                return;
+            }
+            self.buf.set(i, snap_i);
+            while self.buf.len() > snap_len {
+                self.buf.pop();
+            }
+        }
 
         // Second pass: cancellation (target already has F_HORN, or existing 'w').
         for i in (nucleus_start..nucleus_end).rev() {
