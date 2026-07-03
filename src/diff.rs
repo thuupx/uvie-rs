@@ -383,19 +383,14 @@ impl UltraFastViEngine {
         let ch_is_tone = Self::is_tone_key_in_mode(ch, self.mode);
 
         // Fast check: if not raw or last_valid_out empty, skip optimistic entirely.
-        let is_optimistic = if is_now_raw
+        let is_optimistic = is_now_raw
             && !ch_is_tone
             && !self.diff.last_valid_out.is_empty()
             && Self::is_single_consonant_appended_slice(
                 &self.diff.raw_chars,
                 self.diff.last_valid_raw_len,
             )
-            && self.diff.last_valid_coda_start == self.diff.last_valid_raw_len
-        {
-            true
-        } else {
-            false
-        };
+            && self.diff.last_valid_coda_start == self.diff.last_valid_raw_len;
 
         // Build display_composed: on the common path (not optimistic), we
         // diff directly from new_composed — no scratch buffer needed.
