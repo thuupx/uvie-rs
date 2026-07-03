@@ -10,6 +10,7 @@ pub(crate) trait ToneHandler {
     fn handle_tone_key(&mut self, b: u8, caps: bool);
     fn tone_carrier_idx(&self) -> Option<usize>;
     fn reapply_tone_after_nucleus_change(&mut self);
+    fn apply_coda_tone_rule(&mut self);
 }
 
 impl ToneHandler for UltraFastViEngine {
@@ -249,6 +250,69 @@ impl ToneHandler for UltraFastViEngine {
         if let Some(new_carrier) = self.tone_carrier_idx() {
             let s = self.buf.get_mut(new_carrier);
             s.tone = tv;
+            s.flags |= F_TONE_SET;
+            s.recompute_out();
+        }
+    }
+
+    /// In traditional orthography, the tone for `oa`/`oe`/`uy` diphthongs is
+    /// placed on the first vowel (e.g. "hoá" not "hóa"). This first-vowel
+    /// placement is only correct for **open syllables** (no coda). When the
+    /// syllable has any coda, the tone must go on the second vowel in both
+    /// orthography modes — "đoán" not "đóan", "hoàn" not "hóan", "hoạt" not
+    /// "họat".
+    ///
+    /// Called from `render_out_buf` after the syllable structure is known,
+    /// because the tone is placed when the tone key is pressed (before the
+    /// coda is typed).
+    #[inline]
+    fn apply_coda_tone_rule(&mut self) {
+        if self.enable_modern_orthography {
+            return; // Modern mode already places tone on second vowel.
+        }
+
+        let n = self.buf.len();
+        if n < 4 {
+            return; // Need at least onset + 2 vowels + coda.
+        }
+
+        let (_, nucleus_start, nucleus_end, coda_start) = self.partition_syllable();
+
+        // Must have a coda (any consonant after the nucleus).
+        if coda_start >= n {
+            return;
+        }
+
+        // Nucleus must be a 2-vowel diphthong: oa, oe, uy.
+        let nucleus_len = nucleus_end.saturating_sub(nucleus_start);
+        if nucleus_len != 2 {
+            return;
+        }
+        let nuc0 = self.buf.get(nucleus_start).base_no_tone();
+        let nuc1 = self.buf.get(nucleus_start + 1).base_no_tone();
+        let is_traditional_diphthong =
+            matches!((nuc0, nuc1), ('o', 'a') | ('o', 'e') | ('u', 'y'));
+        if !is_traditional_diphthong {
+            return;
+        }
+
+        // Check if tone is on the first vowel (traditional placement).
+        let first = self.buf.get(nucleus_start);
+        if first.flags & F_TONE_SET == 0 {
+            return; // No tone on first vowel — nothing to fix.
+        }
+
+        // Move tone from first vowel to second vowel (modern placement).
+        let tone = first.tone;
+        {
+            let s = self.buf.get_mut(nucleus_start);
+            s.flags &= !F_TONE_SET;
+            s.tone = 0;
+            s.recompute_out();
+        }
+        {
+            let s = self.buf.get_mut(nucleus_start + 1);
+            s.tone = tone;
             s.flags |= F_TONE_SET;
             s.recompute_out();
         }

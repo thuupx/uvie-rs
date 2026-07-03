@@ -1004,9 +1004,53 @@ fn modern_orthography_oa_with_coda() {
 
 #[test]
 fn traditional_orthography_oa_with_coda() {
-    // hoacs -> hoác → traditional: hóac (tone on 'o')
+    // hoacs -> hoác — with any coda, tone goes on second vowel in both modes.
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "hoacs"), "hóac");
+    assert_eq!(type_seq(&mut e, "hoacs"), "hoác");
+}
+
+#[test]
+fn traditional_orthography_oa_coda_all() {
+    // All codas (stopped + nasal + glide) place tone on 'a' (second vowel).
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoajt"), "hoạt");
+    let mut e2 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e2, "hoast"), "hoát");
+    let mut e3 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e3, "hoapj"), "hoạp");
+    let mut e4 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e4, "hoachj"), "hoạch");
+    // Nasal codas: n, m, ng, nh
+    let mut e5 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e5, "ddoans"), "đoán");
+    let mut e6 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e6, "hoanj"), "hoạn");
+    let mut e7 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e7, "hoamj"), "hoạm");
+    let mut e8 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e8, "hoangj"), "hoạng");
+    let mut e9 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e9, "hoanhj"), "hoạnh");
+}
+
+#[test]
+fn traditional_orthography_oe_coda() {
+    // hoét, hoèn — oe diphthong with coda, tone on 'e' (second vowel).
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoest"), "hoét");
+    let mut e2 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e2, "hoenf"), "hoèn");
+}
+
+#[test]
+fn traditional_orthography_open_syllable_still_first_vowel() {
+    // Open syllables (no coda) keep traditional first-vowel placement.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoas"), "hóa");
+    let mut e2 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e2, "khoes"), "khóe");
+    let mut e3 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e3, "thuys"), "thúy");
 }
 
 #[test]

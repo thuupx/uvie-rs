@@ -167,6 +167,13 @@ impl Composable for UltraFastViEngine {
     fn render_out_buf(&mut self) {
         self.update_syl_structure();
 
+        // In traditional orthography, tone for oa/oe/uy goes on the first
+        // vowel — but only for open syllables. With any coda, the tone must
+        // be on the second vowel: "đoán" not "đóan", "hoạt" not "họat".
+        // Applied at render time because the tone is placed before the coda
+        // is typed.
+        self.apply_coda_tone_rule();
+
         self.out_buf.clear();
         let n = self.buf.len();
         if n == 0 {
