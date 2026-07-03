@@ -201,7 +201,7 @@ impl ToneHandler for UltraFastViEngine {
                     ['o', 'a'] | ['o', 'e'] | ['u', 'y']
                 );
                 if is_traditional_diphthong {
-                    return Some(eff_nucleus_start + 0 + tone_offset);
+                    return Some(eff_nucleus_start + tone_offset);
                 }
             }
             return Some(eff_nucleus_start + target_in_nucleus + tone_offset);
