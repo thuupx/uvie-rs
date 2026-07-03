@@ -277,28 +277,39 @@ impl UltraFastViEngine {
         // Optimistic display: show coda consonant appended to valid Vietnamese.
         // Only use it when the valid Vietnamese syllable had no coda yet;
         // otherwise the screen and the engine's true state diverge, causing ghost characters.
+        //
+        // Branch prediction: is_optimistic is RARE (only when a single
+        // consonant is appended after a valid Vietnamese syllable with no
+        // coda). We check the cheap conditions first and short-circuit
+        // before touching scratch buffers.
         let ch_is_tone = Self::is_tone_key_in_mode(ch, self.mode);
-        // Reuse scratch buffer instead of cloning last_valid_out.
-        self.diff.scratch_optimistic.clear();
-        let _ = self.diff.scratch_optimistic.push_str(&self.diff.last_valid_out);
-        let _ = self.diff.scratch_optimistic.push(ch);
-        let is_optimistic = is_now_raw
-            && !self.diff.last_valid_out.is_empty()
+
+        // Fast check: if not raw or last_valid_out empty, skip optimistic entirely.
+        let is_optimistic = if is_now_raw
             && !ch_is_tone
+            && !self.diff.last_valid_out.is_empty()
             && Self::is_single_consonant_appended_slice(
                 &self.diff.raw_chars,
                 self.diff.last_valid_raw_len,
             )
-            && self.diff.last_valid_coda_start == self.diff.last_valid_raw_len;
-
-        // Build display_composed in scratch_display (avoids clone).
-        self.diff.scratch_display.clear();
-        if is_optimistic {
-            let _ = self.diff.scratch_display.push_str(&self.diff.scratch_optimistic);
+            && self.diff.last_valid_coda_start == self.diff.last_valid_raw_len
+        {
+            true
         } else {
-            let _ = self.diff.scratch_display.push_str(&new_composed);
-        }
-        let display_composed = &self.diff.scratch_display;
+            false
+        };
+
+        // Build display_composed: on the common path (not optimistic), we
+        // diff directly from new_composed — no scratch buffer needed.
+        // Only build scratch_display when optimistic (rare).
+        let display_composed: &str = if is_optimistic {
+            self.diff.scratch_display.clear();
+            let _ = self.diff.scratch_display.push_str(&self.diff.last_valid_out);
+            let _ = self.diff.scratch_display.push(ch);
+            &self.diff.scratch_display
+        } else {
+            &new_composed
+        };
 
         // Diff baseline: prev_rendered is used as-is (no clone needed — we
         // diff from it, then overwrite it below).
@@ -306,6 +317,8 @@ impl UltraFastViEngine {
         let _ = self.diff.prev_inner_render.push_str(&new_composed);
 
         // V-C-V boundary detection.
+        // RARE: only fires when a vowel starts a new syllable after a consonant.
+        // Check cheap conditions first for branch prediction.
         let ch_is_vowel = Self::is_ascii_vowel(ch as u8);
         if is_now_raw
             && ch_is_vowel
