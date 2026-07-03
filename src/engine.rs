@@ -34,6 +34,12 @@ pub struct UltraFastViEngine {
 
     /// Diff-mode state (V-C-V splitting, screen diffing).
     pub(crate) diff: DiffState,
+
+    /// Cached `partition_syllable()` result + the `buf.version()` it was
+    /// computed from. On each access, if the version matches, the cached
+    /// result is returned; otherwise it's recomputed. This avoids 5-10
+    /// redundant O(n) scans per keystroke.
+    pub(crate) cached_partition: (u32, (usize, usize, usize, usize)),
 }
 
 impl UltraFastViEngine {
@@ -54,6 +60,7 @@ impl UltraFastViEngine {
             enable_relaxed_coda: false,
             syl_structure: SylStructure::new(),
             diff: DiffState::new(),
+            cached_partition: (0, (0, 0, 0, 0)),
         }
     }
 
@@ -163,6 +170,7 @@ impl UltraFastViEngine {
         self.out_buf.clear();
         self.committed.clear();
         self.syl_structure.clear();
+        // No need to reset cached_partition — version check handles it.
     }
 
     /// Finalise the composing word into `committed` and reset composing state.

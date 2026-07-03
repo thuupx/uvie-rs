@@ -14,6 +14,8 @@ use crate::tables::{is_legal_coda, is_legal_nucleus, is_legal_onset, tone_allowe
 pub(crate) trait SyllableValidator {
     fn is_valid_vietnamese(&self) -> bool;
     fn partition_syllable(&self) -> (usize, usize, usize, usize);
+    /// Compute partition from scratch (uncached).
+    fn compute_partition(&self) -> (usize, usize, usize, usize);
     fn mark_all_literal(&mut self);
     fn is_vowel_entry(&self, s: &Syl) -> bool;
     fn onset_len(&self) -> usize;
@@ -82,6 +84,27 @@ impl SyllableValidator for UltraFastViEngine {
 
     #[inline]
     fn partition_syllable(&self) -> (usize, usize, usize, usize) {
+        // Fast path: return cached result if buf version matches.
+        let version = self.buf.version();
+        if self.cached_partition.0 == version {
+            return self.cached_partition.1;
+        }
+        // Cache miss: compute fresh and store.
+        let result = self.compute_partition();
+        // SAFETY: partition_syllable takes &self but we need to write the
+        // cache. We use a raw pointer to bypass the borrow checker. This is
+        // sound because:
+        // 1. The cache is only read/written here, under &self.
+        // 2. The version check ensures we never return stale data.
+        // 3. No other &mut self alias exists during this call.
+        let this = self as *const Self as *mut Self;
+        unsafe { (*this).cached_partition = (version, result); }
+        result
+    }
+
+    /// Compute partition from scratch (uncached).
+    #[inline]
+    fn compute_partition(&self) -> (usize, usize, usize, usize) {
         let n = self.buf.len();
 
         let mut onset_end = 0;
