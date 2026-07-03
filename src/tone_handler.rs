@@ -197,10 +197,8 @@ impl ToneHandler for UltraFastViEngine {
             // `gi-` onsets already strip their glide vowel above, so `uy`
             // here is the standalone case (e.g. `tùy`), not `quy`.
             if !self.enable_modern_orthography && target_in_nucleus == 1 {
-                let is_traditional_diphthong = matches!(
-                    eff_slice,
-                    ['o', 'a'] | ['o', 'e'] | ['u', 'y']
-                );
+                let is_traditional_diphthong =
+                    matches!(eff_slice, ['o', 'a'] | ['o', 'e'] | ['u', 'y']);
                 if is_traditional_diphthong {
                     return Some(eff_nucleus_start + tone_offset);
                 }
@@ -290,8 +288,7 @@ impl ToneHandler for UltraFastViEngine {
         }
         let nuc0 = self.buf.get(nucleus_start).base_no_tone();
         let nuc1 = self.buf.get(nucleus_start + 1).base_no_tone();
-        let is_traditional_diphthong =
-            matches!((nuc0, nuc1), ('o', 'a') | ('o', 'e') | ('u', 'y'));
+        let is_traditional_diphthong = matches!((nuc0, nuc1), ('o', 'a') | ('o', 'e') | ('u', 'y'));
         if !is_traditional_diphthong {
             return;
         }

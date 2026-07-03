@@ -98,7 +98,9 @@ impl SyllableValidator for UltraFastViEngine {
         // 2. The version check ensures we never return stale data.
         // 3. No other &mut self alias exists during this call.
         let this = self as *const Self as *mut Self;
-        unsafe { (*this).cached_partition = (version, result); }
+        unsafe {
+            (*this).cached_partition = (version, result);
+        }
         result
     }
 

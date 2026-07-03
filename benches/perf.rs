@@ -50,7 +50,10 @@ const WORKAROUND_WORDS: &[(&str, &str)] = &[
 
 const LONG_SENTENCES: &[(&str, &str)] = &[
     ("sentence_short", "Tooi ddang gox Tieengs Vieejt "),
-    ("sentence_medium", "Tooi ddang gox Tieengs Vieejt baengs boox gox UVieKey "),
+    (
+        "sentence_medium",
+        "Tooi ddang gox Tieengs Vieejt baengs boox gox UVieKey ",
+    ),
     (
         "sentence_long",
         "Tooi ddang gox Tieengs Vieejt baengs boox gox UVieKey vaex noos rraats nhahj vaaf chinhx xacs ",

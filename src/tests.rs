@@ -2067,8 +2067,12 @@ fn comprehensive_vietnamese_phonotactics() {
         ("thuowng", "thương"),
         ("thajat", "thật"),
         // Mid-nucleus tone for â (aa), ô (oo), ê (ee)
-        ("aja", "ậ"), ("ojo", "ộ"), ("eje", "ệ"),
-        ("thasat", "thất"), ("tosot", "tốt"), ("ieje", "i\u{1ec7}"),
+        ("aja", "ậ"),
+        ("ojo", "ộ"),
+        ("eje", "ệ"),
+        ("thasat", "thất"),
+        ("tosot", "tốt"),
+        ("ieje", "i\u{1ec7}"),
         ("thuongws", "thướng"),
         ("thuongwf", "thường"),
         ("thuongwx", "thưỡng"),
@@ -2217,31 +2221,52 @@ fn mid_nucleus_tone_all_patterns() {
     // vowels of a circumflex nucleus (aa→â, ee→ê, oo→ô, ie→iê, ye→yê, ue→uê).
     let cases: &[(&str, &str)] = &[
         // â (aa): a + tone + a (bare, no coda — 5 tones; z=cancel is consonant now)
-        ("aja", "ậ"), ("asa", "ấ"), ("afa", "ầ"), ("ara", "ẩ"),
+        ("aja", "ậ"),
+        ("asa", "ấ"),
+        ("afa", "ầ"),
+        ("ara", "ẩ"),
         ("axa", "ẫ"),
         // â with coda — only valid Vietnamese syllables
-        ("thajat", "thật"), ("thasat", "thất"),
+        ("thajat", "thật"),
+        ("thasat", "thất"),
         // ô (oo): o + tone + o (bare, no coda — 5 tones; z=cancel is consonant now)
-        ("ojo", "ộ"), ("oso", "ố"), ("ofo", "ồ"), ("oro", "ổ"),
+        ("ojo", "ộ"),
+        ("oso", "ố"),
+        ("ofo", "ồ"),
+        ("oro", "ổ"),
         ("oxo", "ỗ"),
         // ô with coda — only valid Vietnamese syllables
-        ("tojot", "tột"), ("tosot", "tốt"),
+        ("tojot", "tột"),
+        ("tosot", "tốt"),
         // ê (ee): e + tone + e (bare only, no consonant onset; z=cancel is consonant)
-        ("eje", "ệ"), ("ese", "ế"), ("efe", "ề"), ("ere", "ể"),
+        ("eje", "ệ"),
+        ("ese", "ế"),
+        ("efe", "ề"),
+        ("ere", "ể"),
         ("exe", "ễ"),
         // iê (ie): i + e + tone + e (z=cancel is consonant, not included)
-        ("ieje", "i\u{1ec7}"), ("iese", "i\u{1ebf}"), ("iefe", "i\u{1ec1}"),
-        ("iere", "i\u{1ec3}"), ("iexe", "i\u{1ec5}"),
+        ("ieje", "i\u{1ec7}"),
+        ("iese", "i\u{1ebf}"),
+        ("iefe", "i\u{1ec1}"),
+        ("iere", "i\u{1ec3}"),
+        ("iexe", "i\u{1ec5}"),
         // yê (ye): y + e + tone + e
-        ("yeje", "yệ"), ("yese", "yế"), ("yefe", "yề"),
+        ("yeje", "yệ"),
+        ("yese", "yế"),
+        ("yefe", "yề"),
         // uê (ue): u + e + tone + e
-        ("ueje", "uệ"), ("uese", "uế"), ("uefe", "uề"),
+        ("ueje", "uệ"),
+        ("uese", "uế"),
+        ("uefe", "uề"),
         // glide + circumflex + mid-tone
-        ("quyeje", "quyệ"), ("hueje", "huệ"),
+        ("quyeje", "quyệ"),
+        ("hueje", "huệ"),
         // English words should NOT be transformed (no ee mid-tone with onset)
-        ("reset", "reset"), ("telex", "telex"),
+        ("reset", "reset"),
+        ("telex", "telex"),
         // z as consonant (not tone cancel when no tone is set yet)
-        ("azure", "azure"), ("jazz", "jazz"),
+        ("azure", "azure"),
+        ("jazz", "jazz"),
     ];
 
     for &(input, expected) in cases {
@@ -2312,14 +2337,14 @@ fn z_tone_cancel_with_existing_tone() {
     // Telex 'z' should still cancel an existing tone.
     let cases: &[(&str, &str)] = &[
         // single vowel + tone + z cancel
-        ("asz", "a"),   // s= sắc, z= cancel → a
-        ("afz", "a"),   // f= huyền, z= cancel → a
-        ("arz", "a"),   // r= hỏi, z= cancel → a
-        ("axz", "a"),   // x= ngã, z= cancel → a
-        ("ajz", "a"),   // j= nặng, z= cancel → a
+        ("asz", "a"), // s= sắc, z= cancel → a
+        ("afz", "a"), // f= huyền, z= cancel → a
+        ("arz", "a"), // r= hỏi, z= cancel → a
+        ("axz", "a"), // x= ngã, z= cancel → a
+        ("ajz", "a"), // j= nặng, z= cancel → a
         // override then cancel
-        ("asjz", "a"),  // s= sắc, j= nặng (override), z= cancel → a
-        ("afsz", "a"),  // f= huyền, s= sắc (override), z= cancel → a
+        ("asjz", "a"), // s= sắc, j= nặng (override), z= cancel → a
+        ("afsz", "a"), // f= huyền, s= sắc (override), z= cancel → a
         // z after modifier (no tone set) → z is consonant
         ("owz", "owz"), // ow= ơ, z= consonant (no tone to cancel)
         ("awz", "awz"), // aw= ă, z= consonant (no tone to cancel)
@@ -2343,17 +2368,17 @@ fn vni_zero_as_consonant_when_no_tone() {
     // VNI '0' (tone_val == 0) should be treated as a literal when there is
     // no existing tone to cancel, same as Telex 'z'.
     let cases: &[(&str, &str)] = &[
-        ("a0", "a0"),    // 0 after vowel, no tone → literal
+        ("a0", "a0"), // 0 after vowel, no tone → literal
         ("e0", "e0"),
         ("o0", "o0"),
-        ("0a", "0a"),    // 0 at start
-        ("a00", "a00"),  // multiple 0
+        ("0a", "0a"),   // 0 at start
+        ("a00", "a00"), // multiple 0
         // 0 cancel with existing tone (should work)
-        ("a10", "a"),    // 1= sắc, 0= cancel → a
-        ("a20", "a"),    // 2= huyền, 0= cancel → a
-        ("a30", "a"),    // 3= hỏi, 0= cancel → a
-        ("a40", "a"),    // 4= ngã, 0= cancel → a
-        ("a50", "a"),    // 5= nặng, 0= cancel → a
+        ("a10", "a"), // 1= sắc, 0= cancel → a
+        ("a20", "a"), // 2= huyền, 0= cancel → a
+        ("a30", "a"), // 3= hỏi, 0= cancel → a
+        ("a40", "a"), // 4= ngã, 0= cancel → a
+        ("a50", "a"), // 5= nặng, 0= cancel → a
     ];
 
     for &(input, expected) in cases {
@@ -2373,16 +2398,20 @@ fn mid_nucleus_tone_with_various_codas() {
     // which passes through invalid syllables).
     let cases: &[(&str, &str)] = &[
         // â + coda: t, p, c, ch, m
-        ("lajat", "lật"), ("lajap", "lập"),
+        ("lajat", "lật"),
+        ("lajap", "lập"),
         ("ngajac", "ngậc"),
         ("thajach", "thậch"),
         ("lajam", "lậm"),
         // ô + coda: n, p, ng
-        ("tojon", "tộn"), ("tojop", "tộp"),
+        ("tojon", "tộn"),
+        ("tojop", "tộp"),
         ("ngojong", "ngộng"),
         // iê + coda: n, c, ch, m
-        ("iejen", "iện"), ("iejec", "iệc"),
-        ("iejech", "iệch"), ("iejem", "iệm"),
+        ("iejen", "iện"),
+        ("iejec", "iệc"),
+        ("iejech", "iệch"),
+        ("iejem", "iệm"),
         // uê + coda: n → uện (not uyên)
         ("uejen", "uện"),
     ];
@@ -2417,19 +2446,28 @@ fn mid_nucleus_tone_via_diff() {
 
     let cases: &[(&str, &str)] = &[
         // â (aa) mid-tone
-        ("aja", "ậ"), ("thajat", "thật"),
-        ("thafat", "thầt"), ("thaxat", "thẫt"),
+        ("aja", "ậ"),
+        ("thajat", "thật"),
+        ("thafat", "thầt"),
+        ("thaxat", "thẫt"),
         // ô (oo) mid-tone
-        ("ojo", "ộ"), ("tojot", "tột"),
-        ("tofot", "tồt"), ("toxot", "tỗt"),
+        ("ojo", "ộ"),
+        ("tojot", "tột"),
+        ("tofot", "tồt"),
+        ("toxot", "tỗt"),
         // ê (ee) mid-tone (bare only)
-        ("eje", "ệ"), ("ese", "ế"),
+        ("eje", "ệ"),
+        ("ese", "ế"),
         // iê/yê/uê mid-tone
-        ("ieje", "i\u{1ec7}"), ("yeje", "yệ"), ("ueje", "uệ"),
+        ("ieje", "i\u{1ec7}"),
+        ("yeje", "yệ"),
+        ("ueje", "uệ"),
         // z as consonant
-        ("azure", "azure"), ("jazz", "jazz"),
+        ("azure", "azure"),
+        ("jazz", "jazz"),
         // z between vowels (consonant, not mid-nucleus)
-        ("aza", "aza"), ("thaza", "thaza"),
+        ("aza", "aza"),
+        ("thaza", "thaza"),
     ];
 
     for &(input, expected) in cases {
@@ -2449,13 +2487,13 @@ fn mid_nucleus_tone_override() {
     // override the tone (last tone wins).
     let cases: &[(&str, &str)] = &[
         // â + nặng (mid) then sắc (override)
-        ("ajas", "ấ"),   // a+j+a=ậ, s= sắc → ấ
+        ("ajas", "ấ"), // a+j+a=ậ, s= sắc → ấ
         // â + sắc (mid) then huyền (override)
-        ("asaf", "ầ"),   // a+s+a=ấ, f= huyền → ầ
+        ("asaf", "ầ"), // a+s+a=ấ, f= huyền → ầ
         // ô + nặng (mid) then hỏi (override)
-        ("ojor", "ổ"),   // o+j+o=ộ, r= hỏi → ổ
+        ("ojor", "ổ"), // o+j+o=ộ, r= hỏi → ổ
         // iê + nặng (mid) then sắc (override)
-        ("iejes", "i\u{1ebf}"),  // i+e+j+e=iệ, s= sắc → iế
+        ("iejes", "i\u{1ebf}"), // i+e+j+e=iệ, s= sắc → iế
     ];
 
     for &(input, expected) in cases {
@@ -2477,11 +2515,11 @@ fn mid_nucleus_tone_double_cancel() {
     // Vietnamese → passthrough.
     let cases: &[(&str, &str)] = &[
         // â + sắc (mid) then sắc again (cancel) → âs (invalid) → passthrough
-        ("asas", "asa"),   // a+s+a=ấ, s= cancel → â+s → asa (passthrough)
+        ("asas", "asa"), // a+s+a=ấ, s= cancel → â+s → asa (passthrough)
         // â + huyền (mid) then huyền again (cancel) → âf (invalid) → passthrough
-        ("afaf", "afa"),   // a+f+a=ầ, f= cancel → â+f → afa (passthrough)
+        ("afaf", "afa"), // a+f+a=ầ, f= cancel → â+f → afa (passthrough)
         // ô + sắc (mid) then sắc again (cancel) → ôs (invalid) → passthrough
-        ("osos", "oso"),   // o+s+o=ố, s= cancel → ô+s → oso (passthrough)
+        ("osos", "oso"), // o+s+o=ố, s= cancel → ô+s → oso (passthrough)
         // iê + nặng (mid) then nặng again (cancel) → iêj (invalid) → passthrough
         ("iejej", "ieje"), // i+e+j+e=iệ, j= cancel → iê+j → ieje (passthrough)
     ];

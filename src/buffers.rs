@@ -168,8 +168,7 @@ impl<const N: usize> StackStr<N> {
         if self.len + encoded_len > N {
             return false;
         }
-        self.bytes[self.len..self.len + encoded_len]
-            .copy_from_slice(&buf[..encoded_len]);
+        self.bytes[self.len..self.len + encoded_len].copy_from_slice(&buf[..encoded_len]);
         self.len += encoded_len;
         true
     }

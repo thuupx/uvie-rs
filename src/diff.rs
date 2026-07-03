@@ -217,11 +217,8 @@ impl Diffable for UltraFastViEngine {
             self.diff.last_valid_out = snap.last_valid_out;
 
             // Diff old vs new composing text.
-            let (bs, _) = Self::diff_into(
-                &prev,
-                &self.diff.prev_rendered,
-                &mut self.diff.diff_suffix,
-            );
+            let (bs, _) =
+                Self::diff_into(&prev, &self.diff.prev_rendered, &mut self.diff.diff_suffix);
             return (bs, &self.diff.diff_suffix);
         }
 
@@ -397,7 +394,10 @@ impl UltraFastViEngine {
         // Only build scratch_display when optimistic (rare).
         let display_composed: &str = if is_optimistic {
             self.diff.scratch_display.clear();
-            let _ = self.diff.scratch_display.push_str(&self.diff.last_valid_out);
+            let _ = self
+                .diff
+                .scratch_display
+                .push_str(&self.diff.last_valid_out);
             let _ = self.diff.scratch_display.push(ch);
             &self.diff.scratch_display
         } else {
