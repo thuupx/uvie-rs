@@ -189,6 +189,21 @@ impl ToneHandler for UltraFastViEngine {
         let eff_slice = &eff_nuc_slice[..eff_len];
 
         if let Some(target_in_nucleus) = nucleus_tone_target(eff_slice) {
+            // Traditional orthography: place the tone on the FIRST vowel of
+            // `oa`, `oe`, `uy` (e.g. `hóa` instead of `hoá`, `hòe` instead
+            // of `hoè`, `tùy` instead of `tuỳ`). Modern orthography (the
+            // table default) places it on the second vowel. The `qu-` and
+            // `gi-` onsets already strip their glide vowel above, so `uy`
+            // here is the standalone case (e.g. `tùy`), not `quy`.
+            if !self.enable_modern_orthography && target_in_nucleus == 1 {
+                let is_traditional_diphthong = matches!(
+                    eff_slice,
+                    ['o', 'a'] | ['o', 'e'] | ['u', 'y']
+                );
+                if is_traditional_diphthong {
+                    return Some(eff_nucleus_start + 0 + tone_offset);
+                }
+            }
             return Some(eff_nucleus_start + target_in_nucleus + tone_offset);
         }
 

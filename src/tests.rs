@@ -228,18 +228,22 @@ fn greedy_tone_last_wins() {
 #[test]
 fn tone_placement_two_vowels_no_coda() {
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoas"), "hoá");
 
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoaf"), "hoà");
 }
 
 #[test]
 fn tone_placement_two_vowels_with_coda() {
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoans"), "hoán");
 
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoanj"), "hoạn");
 }
 
@@ -328,16 +332,19 @@ fn regression_qu_gi_placement() {
 
 #[test]
 fn regression_vowel_pairs() {
-    // oa -> hoà (tone on a, new style)
+    // oa -> hoà (tone on a, modern orthography)
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoaf"), "hoà");
 
-    // oe -> hoè (tone on e, new style)
+    // oe -> hoè (tone on e, modern orthography)
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoef"), "hoè");
 
-    // uy -> tuỳ (tone on y, new style)
+    // uy -> tuỳ (tone on y, modern orthography)
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "tuyf"), "tuỳ");
 
     // ia -> mía (tone on i)
@@ -690,7 +697,8 @@ fn relaxed_coda_allows_g_shorthand() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "ddawjg"), "đawjg");
 
-    // Relaxed mode: g is accepted as shorthand for ng
+    // Relaxed mode: g is accepted as a legal coda and rendered verbatim
+    // (the user types g as shorthand for ng; the engine keeps the typed char).
     let mut e = UltraFastViEngine::new();
     e.set_relaxed_coda(true);
     assert_eq!(type_seq(&mut e, "ddawjg"), "đặg");
@@ -704,6 +712,29 @@ fn relaxed_coda_allows_g_shorthand() {
     let mut e = UltraFastViEngine::new();
     e.set_relaxed_coda(true);
     assert_eq!(type_seq(&mut e, "ddawngj"), "đặng");
+}
+
+#[test]
+fn relaxed_coda_allows_h_shorthand() {
+    // Strict mode: lone h is not a legal coda -> passthrough
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "nhafh"), "nhafh");
+
+    // Relaxed mode: h is accepted as a legal coda and rendered verbatim
+    // (the user types h as shorthand for nh; the engine keeps the typed char).
+    let mut e = UltraFastViEngine::new();
+    e.set_relaxed_coda(true);
+    assert_eq!(type_seq(&mut e, "nhafh"), "nhàh");
+
+    // With nặng tone
+    let mut e = UltraFastViEngine::new();
+    e.set_relaxed_coda(true);
+    assert_eq!(type_seq(&mut e, "ddawjh"), "đặh");
+
+    // Standard nh still works in relaxed mode
+    let mut e = UltraFastViEngine::new();
+    e.set_relaxed_coda(true);
+    assert_eq!(type_seq(&mut e, "ddanhj"), "đạnh");
 }
 
 #[test]
@@ -935,30 +966,62 @@ fn quick_telex_disabled_by_default() {
 
 #[test]
 fn modern_orthography_hoas() {
-    // hoas -> hoá (tone on 'a' - uvie-rs default is already modern orthography)
+    // hoas -> hoá (tone on 'a' — modern orthography)
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoas"), "hoá");
 }
 
 #[test]
-fn modern_orthography_thuys() {
-    // thuys -> thuý (tone on 'y' - uvie-rs default is already modern orthography)
+fn traditional_orthography_hoas() {
+    // hoas -> hóa (tone on 'o' — traditional orthography, engine default)
     let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoas"), "hóa");
+}
+
+#[test]
+fn modern_orthography_thuys() {
+    // thuys -> thuý (tone on 'y' — modern orthography)
+    let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "thuys"), "thuý");
 }
 
 #[test]
-fn modern_orthography_oa_with_coda() {
-    // hoacs -> hoác (tone on 'a' even with coda)
+fn traditional_orthography_thuys() {
+    // thuys -> thúy (tone on 'u' — traditional orthography)
     let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "thuys"), "thúy");
+}
+
+#[test]
+fn modern_orthography_oa_with_coda() {
+    // hoacs -> hoác (tone on 'a' even with coda — modern)
+    let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoacs"), "hoác");
 }
 
 #[test]
-fn modern_orthography_oe_pair() {
-    // khoes -> khoé (tone on 'e')
+fn traditional_orthography_oa_with_coda() {
+    // hoacs -> hoác → traditional: hóac (tone on 'o')
     let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoacs"), "hóac");
+}
+
+#[test]
+fn modern_orthography_oe_pair() {
+    // khoes -> khoé (tone on 'e' — modern)
+    let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "khoes"), "khoé");
+}
+
+#[test]
+fn traditional_orthography_oe_pair() {
+    // khoes -> khóe (tone on 'o' — traditional)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "khoes"), "khóe");
 }
 
 #[test]
@@ -2094,6 +2157,7 @@ fn comprehensive_vietnamese_phonotactics() {
 
     for (input, expected) in cases {
         let mut e = UltraFastViEngine::new();
+        e.set_modern_orthography(true);
         let got = type_seq(&mut e, input);
         assert_eq!(
             got, *expected,
@@ -2937,6 +3001,7 @@ fn test_special_nuclei_tone_placement() {
     // ươ formation via uw + ow sequence: th + u + w + o + n + g + s
     // Current behavior: w applies to u first, then tone applies
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     let result = type_seq(&mut e, "thuongs");
     // Engine produces "thúong" - tone on first vowel, w modifies later
     // This documents current behavior; may need nucleus table fix for "thương"
@@ -2949,6 +3014,7 @@ fn test_special_nuclei_tone_placement() {
     // uô formation: th + u + o + w modifies first vowel (ư) not second
     // thuocws → thước (w applies to u → ư, then tone s on ư)
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(
         type_seq(&mut e, "thuocws"),
         "thước",
@@ -2958,6 +3024,7 @@ fn test_special_nuclei_tone_placement() {
     // oă formation: o + a + w → oă, then ng coda, then x tone
     // Tone placement depends on nucleus table definition
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     let result = type_seq(&mut e, "hoangx");
     // Document actual behavior: tone applies to first vowel in nucleus
     assert!(
@@ -3294,6 +3361,7 @@ mod word_boundary_punctuation_tests {
     #[test]
     fn at_sign_boundary() {
         let mut e = UltraFastViEngine::new();
+        e.set_modern_orthography(true);
         // `user` gets V-C-V split into `u` + `sẻ` (both valid VN syllables),
         // then `@` boundary, then `hoas` → `hoá`. This is correct engine behaviour:
         // it doesn't know `user` is English.

@@ -10,7 +10,7 @@ fn main() {
         match arg.as_str() {
             "--help" | "-h" => {
                 println!(
-                    "Usage: uvie [--mode telex|vni] [--relaxed-coda]\n\n  --mode telex|vni   Select input method (default: telex)\n  --relaxed-coda     Allow lone 'g' as shorthand coda for 'ng' (e.g. đặg)"
+                    "Usage: uvie [--mode telex|vni] [--relaxed-coda]\n\n  --mode telex|vni   Select input method (default: telex)\n  --relaxed-coda     Accept lone 'g'/'h' as shorthand codas for 'ng'/'nh' (rendered verbatim, e.g. đặg, nhàh)"
                 );
                 return;
             }
