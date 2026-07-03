@@ -535,23 +535,35 @@ impl UltraFastViEngine {
 
     /// Re-render a slice of chars through the engine and return rendered output.
     ///
-    /// Uses a thread-local scratch engine to avoid allocating a fresh
-    /// `UltraFastViEngine` (which includes a 24-entry SylBuf + 128-byte
-    /// OutBuffer) on every V-C-V split.
+    /// On `std`: uses a thread-local scratch engine to avoid allocating a
+    /// fresh `UltraFastViEngine` on every V-C-V split.
+    /// On `no_std`: creates a new engine each time (no `thread_local!`).
     pub(crate) fn rerender_chars(raw: &[char], mode: &'static Mode) -> OutBuffer {
-        thread_local! {
-            static SCRATCH: std::cell::RefCell<UltraFastViEngine> =
-                std::cell::RefCell::new(UltraFastViEngine::new());
+        #[cfg(feature = "std")]
+        {
+            thread_local! {
+                static SCRATCH: std::cell::RefCell<UltraFastViEngine> =
+                    std::cell::RefCell::new(UltraFastViEngine::new());
+            }
+            SCRATCH.with(|s| {
+                let mut eng = s.borrow_mut();
+                eng.clear();
+                eng.mode = mode;
+                for &c in raw {
+                    eng.feed(c);
+                }
+                eng.out_buf.clone()
+            })
         }
-        SCRATCH.with(|s| {
-            let mut eng = s.borrow_mut();
-            eng.clear();
+        #[cfg(not(feature = "std"))]
+        {
+            let mut eng = UltraFastViEngine::new();
             eng.mode = mode;
             for &c in raw {
                 eng.feed(c);
             }
             eng.out_buf.clone()
-        })
+        }
     }
 
     #[inline]

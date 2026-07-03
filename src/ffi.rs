@@ -306,7 +306,7 @@ pub extern "C" fn uvie_engine_current_output(
             return 0;
         };
         let text = e.current_output();
-        write_output(&text, out_buf, out_len)
+        write_output(&*text, out_buf, out_len)
     })
     .unwrap_or(0)
 }
@@ -327,7 +327,7 @@ pub extern "C" fn uvie_engine_raw_chars(
             return 0;
         };
         let s = e.raw_chars_string();
-        write_output(&s, out_buf, out_len)
+        write_output(&*s, out_buf, out_len)
     })
     .unwrap_or(0)
 }

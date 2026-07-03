@@ -1,4 +1,4 @@
-use crate::buffers::{OutBuffer, new_out_buffer};
+use crate::buffers::{OutBuffer, StackStr, new_out_buffer};
 use crate::composing::Composable;
 use crate::diff::DiffState;
 use crate::modes::{InputMethod, Mode, mode_for};
@@ -126,10 +126,14 @@ impl UltraFastViEngine {
         self.diff.raw_chars.len()
     }
 
-    /// Copy the diff-mode raw characters into a `String` for debugging/tests.
-    #[cfg(feature = "std")]
-    pub fn raw_chars_string(&self) -> String {
-        self.diff.raw_chars.iter().collect()
+    /// Copy the diff-mode raw characters into a `StackStr` for debugging/tests.
+    /// Returns a stack-allocated buffer (no heap allocation).
+    pub fn raw_chars_string(&self) -> StackStr<64> {
+        let mut buf = StackStr::new();
+        for &c in self.diff.raw_chars.iter() {
+            let _ = buf.push(c);
+        }
+        buf
     }
 
     pub fn current_composing(&self) -> &str {
@@ -146,12 +150,13 @@ impl UltraFastViEngine {
         &self.committed
     }
 
-    #[cfg(feature = "std")]
-    pub fn current_output(&self) -> String {
-        let mut s = String::with_capacity(self.committed.len() + self.out_buf.len());
-        s.push_str(&self.committed);
-        s.push_str(&self.out_buf);
-        s
+    /// Returns the full output (committed + composing) as a stack-allocated
+    /// buffer. No heap allocation.
+    pub fn current_output(&self) -> StackStr<256> {
+        let mut buf = StackStr::new();
+        let _ = buf.push_str(&self.committed);
+        let _ = buf.push_str(&self.out_buf);
+        buf
     }
 
     /// Returns the current syllable structure (onset/nucleus/coda slots).

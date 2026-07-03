@@ -256,45 +256,17 @@ impl<const N: usize> PartialEq<str> for StackStr<N> {
 }
 
 // ---------------------------------------------------------------------------
-// Type aliases — heapless for no_std, StackStr for std
+// Type aliases — StackStr for both std and no_std (zero heap, zero deps)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "heapless")]
-pub type RawBuffer = heapless::String<32>;
-
-#[cfg(feature = "heapless")]
-pub type OutBuffer = heapless::String<128>;
-
-#[cfg(not(feature = "heapless"))]
 pub type RawBuffer = StackStr<64>;
-
-#[cfg(not(feature = "heapless"))]
 pub type OutBuffer = StackStr<128>;
 
-#[cfg(all(not(feature = "std"), not(feature = "heapless")))]
-compile_error!(
-    "no_std build requires `heapless` feature (use --no-default-features --features heapless)"
-);
-
-#[cfg(feature = "heapless")]
-#[inline(always)]
-pub fn new_raw_buffer() -> RawBuffer {
-    RawBuffer::new()
-}
-
-#[cfg(feature = "heapless")]
-#[inline(always)]
-pub fn new_out_buffer() -> OutBuffer {
-    OutBuffer::new()
-}
-
-#[cfg(not(feature = "heapless"))]
 #[inline(always)]
 pub fn new_raw_buffer() -> RawBuffer {
     StackStr::new()
 }
 
-#[cfg(not(feature = "heapless"))]
 #[inline(always)]
 pub fn new_out_buffer() -> OutBuffer {
     StackStr::new()
