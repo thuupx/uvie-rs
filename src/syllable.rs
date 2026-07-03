@@ -250,10 +250,13 @@ pub const MAX_WORD_LEN: usize = 24;
 /// A fixed-capacity buffer of [`Syl`] entries for the current composing word.
 ///
 /// Uses a plain array + length counter - zero heap, `no_std`-compatible.
+/// Tracks a `version` counter that increments on every mutation, enabling
+/// O(1) cache validity checks for `partition_syllable`.
 #[derive(Clone)]
 pub struct SylBuf {
     entries: [Syl; MAX_WORD_LEN],
     len: usize,
+    version: u32,
 }
 
 impl SylBuf {
@@ -267,7 +270,15 @@ impl SylBuf {
                 flags: 0,
             }; MAX_WORD_LEN],
             len: 0,
+            version: 0,
         }
+    }
+
+    /// Current version — increments on every mutation.
+    /// Used by `partition_syllable` cache to detect staleness.
+    #[inline]
+    pub fn version(&self) -> u32 {
+        self.version
     }
 
     #[inline]
@@ -291,6 +302,7 @@ impl SylBuf {
         if self.len < MAX_WORD_LEN {
             self.entries[self.len] = s;
             self.len += 1;
+            self.version = self.version.wrapping_add(1);
         }
     }
 
@@ -301,6 +313,7 @@ impl SylBuf {
             return None;
         }
         self.len -= 1;
+        self.version = self.version.wrapping_add(1);
         Some(self.entries[self.len])
     }
 
@@ -308,6 +321,7 @@ impl SylBuf {
     #[inline]
     pub fn clear(&mut self) {
         self.len = 0;
+        self.version = self.version.wrapping_add(1);
     }
 
     /// Immutable slice of live entries.
@@ -319,6 +333,7 @@ impl SylBuf {
     /// Mutable slice of live entries.
     #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [Syl] {
+        self.version = self.version.wrapping_add(1);
         &mut self.entries[..self.len]
     }
 
@@ -331,6 +346,7 @@ impl SylBuf {
 
     #[inline]
     pub fn get_mut(&mut self, i: usize) -> &mut Syl {
+        self.version = self.version.wrapping_add(1);
         &mut self.entries[i]
     }
 
@@ -338,6 +354,14 @@ impl SylBuf {
     #[inline]
     pub fn set(&mut self, i: usize, s: Syl) {
         self.entries[i] = s;
+        self.version = self.version.wrapping_add(1);
+    }
+
+    /// Swap entries at indices `a` and `b`.
+    #[inline]
+    pub fn swap(&mut self, a: usize, b: usize) {
+        self.entries.swap(a, b);
+        self.version = self.version.wrapping_add(1);
     }
 }
 

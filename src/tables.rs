@@ -117,14 +117,17 @@ static LEGAL_CODAS: &[&[u8]] = &[
 /// Returns `true` if `coda` (slice of raw base bytes after the nucleus) is a
 /// legal Vietnamese final cluster.  The empty coda is always legal.
 ///
-/// When `relaxed` is `true`, the final `g` is also accepted as shorthand for
-/// `ng` (e.g. "đặg" for "đặng").
+/// When `relaxed` is `true`, the following lone finals are also accepted as
+/// legal codas (rendered verbatim — the user types them as a shorthand for the
+/// digraph but the engine keeps the typed char):
+///   - `g` (shorthand for `ng`, e.g. "đặg")
+///   - `h` (shorthand for `nh`, e.g. "nhàh")
 pub fn is_legal_coda(coda: &[u8], relaxed: bool) -> bool {
     match coda.len() {
         0 => true,
         1 => match coda[0] {
             b't' | b'p' | b'c' | b'n' | b'm' | b'i' | b'y' | b'u' | b'o' => true,
-            b'g' if relaxed => true,
+            b'g' | b'h' if relaxed => true,
             _ => false,
         },
         2 => matches!(coda, b"ng" | b"nh" | b"ch"),
@@ -140,8 +143,8 @@ pub fn is_legal_coda(coda: &[u8], relaxed: bool) -> bool {
 ///
 /// Vietnamese phonotactic rule: stopped codas only allow sắc/nặng tones.
 ///
-/// In `relaxed` mode, a lone `g` coda is treated as shorthand for `ng` and
-/// therefore allows any tone.
+/// In `relaxed` mode, a lone `g` coda is treated as shorthand for `ng` and a
+/// lone `h` coda as shorthand for `nh`; both therefore allow any tone.
 pub fn tone_allowed_for_coda(coda: &[u8], tone: u8, relaxed: bool) -> bool {
     if tone == 0 {
         return true; // bằng / no-tone always OK
@@ -149,7 +152,7 @@ pub fn tone_allowed_for_coda(coda: &[u8], tone: u8, relaxed: bool) -> bool {
     match coda.len() {
         0 => true,
         1 => {
-            if coda[0] == b'g' && relaxed {
+            if relaxed && matches!(coda[0], b'g' | b'h') {
                 return true;
             }
             if matches!(coda[0], b'c' | b'p' | b't') {
@@ -630,9 +633,11 @@ mod tests {
         assert!(is_legal_coda(b"y", false));
         assert!(is_legal_coda(b"u", false));
         assert!(is_legal_coda(b"", false));
-        // relaxed mode: lone g as shorthand for ng
+        // relaxed mode: lone g/h as shorthand for ng/nh
         assert!(is_legal_coda(b"g", true));
+        assert!(is_legal_coda(b"h", true));
         assert!(!is_legal_coda(b"g", false));
+        assert!(!is_legal_coda(b"h", false));
     }
 
     #[test]
@@ -662,9 +667,11 @@ mod tests {
         assert!(tone_allowed_for_coda(b"n", 3, false));
         assert!(tone_allowed_for_coda(b"ng", 4, false));
         assert!(tone_allowed_for_coda(b"", 3, false));
-        // relaxed mode: lone g behaves like ng
+        // relaxed mode: lone g/h behave like ng/nh (allow any tone)
         assert!(tone_allowed_for_coda(b"g", 3, true));
         assert!(tone_allowed_for_coda(b"g", 4, true));
+        assert!(tone_allowed_for_coda(b"h", 3, true));
+        assert!(tone_allowed_for_coda(b"h", 2, true));
     }
 
     #[test]

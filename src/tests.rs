@@ -228,18 +228,22 @@ fn greedy_tone_last_wins() {
 #[test]
 fn tone_placement_two_vowels_no_coda() {
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoas"), "hoá");
 
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoaf"), "hoà");
 }
 
 #[test]
 fn tone_placement_two_vowels_with_coda() {
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoans"), "hoán");
 
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoanj"), "hoạn");
 }
 
@@ -328,16 +332,19 @@ fn regression_qu_gi_placement() {
 
 #[test]
 fn regression_vowel_pairs() {
-    // oa -> hoà (tone on a, new style)
+    // oa -> hoà (tone on a, modern orthography)
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoaf"), "hoà");
 
-    // oe -> hoè (tone on e, new style)
+    // oe -> hoè (tone on e, modern orthography)
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoef"), "hoè");
 
-    // uy -> tuỳ (tone on y, new style)
+    // uy -> tuỳ (tone on y, modern orthography)
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "tuyf"), "tuỳ");
 
     // ia -> mía (tone on i)
@@ -690,7 +697,8 @@ fn relaxed_coda_allows_g_shorthand() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "ddawjg"), "đawjg");
 
-    // Relaxed mode: g is accepted as shorthand for ng
+    // Relaxed mode: g is accepted as a legal coda and rendered verbatim
+    // (the user types g as shorthand for ng; the engine keeps the typed char).
     let mut e = UltraFastViEngine::new();
     e.set_relaxed_coda(true);
     assert_eq!(type_seq(&mut e, "ddawjg"), "đặg");
@@ -704,6 +712,29 @@ fn relaxed_coda_allows_g_shorthand() {
     let mut e = UltraFastViEngine::new();
     e.set_relaxed_coda(true);
     assert_eq!(type_seq(&mut e, "ddawngj"), "đặng");
+}
+
+#[test]
+fn relaxed_coda_allows_h_shorthand() {
+    // Strict mode: lone h is not a legal coda -> passthrough
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "nhafh"), "nhafh");
+
+    // Relaxed mode: h is accepted as a legal coda and rendered verbatim
+    // (the user types h as shorthand for nh; the engine keeps the typed char).
+    let mut e = UltraFastViEngine::new();
+    e.set_relaxed_coda(true);
+    assert_eq!(type_seq(&mut e, "nhafh"), "nhàh");
+
+    // With nặng tone
+    let mut e = UltraFastViEngine::new();
+    e.set_relaxed_coda(true);
+    assert_eq!(type_seq(&mut e, "ddawjh"), "đặh");
+
+    // Standard nh still works in relaxed mode
+    let mut e = UltraFastViEngine::new();
+    e.set_relaxed_coda(true);
+    assert_eq!(type_seq(&mut e, "ddanhj"), "đạnh");
 }
 
 #[test]
@@ -912,6 +943,13 @@ fn quick_telex_tt() {
 }
 
 #[test]
+fn quick_telex_hh() {
+    let mut e = UltraFastViEngine::new();
+    e.set_quick_telex(true);
+    assert_eq!(type_seq(&mut e, "hh"), "nh");
+}
+
+#[test]
 fn quick_telex_with_tone() {
     let mut e = UltraFastViEngine::new();
     e.set_quick_telex(true);
@@ -928,30 +966,106 @@ fn quick_telex_disabled_by_default() {
 
 #[test]
 fn modern_orthography_hoas() {
-    // hoas -> hoá (tone on 'a' - uvie-rs default is already modern orthography)
+    // hoas -> hoá (tone on 'a' — modern orthography)
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "hoas"), "hoá");
 }
 
 #[test]
-fn modern_orthography_thuys() {
-    // thuys -> thuý (tone on 'y' - uvie-rs default is already modern orthography)
+fn traditional_orthography_hoas() {
+    // hoas -> hóa (tone on 'o' — traditional orthography, engine default)
     let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoas"), "hóa");
+}
+
+#[test]
+fn modern_orthography_thuys() {
+    // thuys -> thuý (tone on 'y' — modern orthography)
+    let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "thuys"), "thuý");
 }
 
 #[test]
+fn traditional_orthography_thuys() {
+    // thuys -> thúy (tone on 'u' — traditional orthography)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "thuys"), "thúy");
+}
+
+#[test]
 fn modern_orthography_oa_with_coda() {
-    // hoacs -> hoác (tone on 'a' even with coda)
+    // hoacs -> hoác (tone on 'a' even with coda — modern)
+    let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
+    assert_eq!(type_seq(&mut e, "hoacs"), "hoác");
+}
+
+#[test]
+fn traditional_orthography_oa_with_coda() {
+    // hoacs -> hoác — with any coda, tone goes on second vowel in both modes.
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "hoacs"), "hoác");
 }
 
 #[test]
-fn modern_orthography_oe_pair() {
-    // khoes -> khoé (tone on 'e')
+fn traditional_orthography_oa_coda_all() {
+    // All codas (stopped + nasal + glide) place tone on 'a' (second vowel).
     let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoajt"), "hoạt");
+    let mut e2 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e2, "hoast"), "hoát");
+    let mut e3 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e3, "hoapj"), "hoạp");
+    let mut e4 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e4, "hoachj"), "hoạch");
+    // Nasal codas: n, m, ng, nh
+    let mut e5 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e5, "ddoans"), "đoán");
+    let mut e6 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e6, "hoanj"), "hoạn");
+    let mut e7 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e7, "hoamj"), "hoạm");
+    let mut e8 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e8, "hoangj"), "hoạng");
+    let mut e9 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e9, "hoanhj"), "hoạnh");
+}
+
+#[test]
+fn traditional_orthography_oe_coda() {
+    // hoét, hoèn — oe diphthong with coda, tone on 'e' (second vowel).
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoest"), "hoét");
+    let mut e2 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e2, "hoenf"), "hoèn");
+}
+
+#[test]
+fn traditional_orthography_open_syllable_still_first_vowel() {
+    // Open syllables (no coda) keep traditional first-vowel placement.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "hoas"), "hóa");
+    let mut e2 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e2, "khoes"), "khóe");
+    let mut e3 = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e3, "thuys"), "thúy");
+}
+
+#[test]
+fn modern_orthography_oe_pair() {
+    // khoes -> khoé (tone on 'e' — modern)
+    let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(type_seq(&mut e, "khoes"), "khoé");
+}
+
+#[test]
+fn traditional_orthography_oe_pair() {
+    // khoes -> khóe (tone on 'o' — traditional)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "khoes"), "khóe");
 }
 
 #[test]
@@ -1953,8 +2067,12 @@ fn comprehensive_vietnamese_phonotactics() {
         ("thuowng", "thương"),
         ("thajat", "thật"),
         // Mid-nucleus tone for â (aa), ô (oo), ê (ee)
-        ("aja", "ậ"), ("ojo", "ộ"), ("eje", "ệ"),
-        ("thasat", "thất"), ("tosot", "tốt"), ("ieje", "i\u{1ec7}"),
+        ("aja", "ậ"),
+        ("ojo", "ộ"),
+        ("eje", "ệ"),
+        ("thasat", "thất"),
+        ("tosot", "tốt"),
+        ("ieje", "i\u{1ec7}"),
         ("thuongws", "thướng"),
         ("thuongwf", "thường"),
         ("thuongwx", "thưỡng"),
@@ -2087,6 +2205,7 @@ fn comprehensive_vietnamese_phonotactics() {
 
     for (input, expected) in cases {
         let mut e = UltraFastViEngine::new();
+        e.set_modern_orthography(true);
         let got = type_seq(&mut e, input);
         assert_eq!(
             got, *expected,
@@ -2102,31 +2221,52 @@ fn mid_nucleus_tone_all_patterns() {
     // vowels of a circumflex nucleus (aa→â, ee→ê, oo→ô, ie→iê, ye→yê, ue→uê).
     let cases: &[(&str, &str)] = &[
         // â (aa): a + tone + a (bare, no coda — 5 tones; z=cancel is consonant now)
-        ("aja", "ậ"), ("asa", "ấ"), ("afa", "ầ"), ("ara", "ẩ"),
+        ("aja", "ậ"),
+        ("asa", "ấ"),
+        ("afa", "ầ"),
+        ("ara", "ẩ"),
         ("axa", "ẫ"),
         // â with coda — only valid Vietnamese syllables
-        ("thajat", "thật"), ("thasat", "thất"),
+        ("thajat", "thật"),
+        ("thasat", "thất"),
         // ô (oo): o + tone + o (bare, no coda — 5 tones; z=cancel is consonant now)
-        ("ojo", "ộ"), ("oso", "ố"), ("ofo", "ồ"), ("oro", "ổ"),
+        ("ojo", "ộ"),
+        ("oso", "ố"),
+        ("ofo", "ồ"),
+        ("oro", "ổ"),
         ("oxo", "ỗ"),
         // ô with coda — only valid Vietnamese syllables
-        ("tojot", "tột"), ("tosot", "tốt"),
+        ("tojot", "tột"),
+        ("tosot", "tốt"),
         // ê (ee): e + tone + e (bare only, no consonant onset; z=cancel is consonant)
-        ("eje", "ệ"), ("ese", "ế"), ("efe", "ề"), ("ere", "ể"),
+        ("eje", "ệ"),
+        ("ese", "ế"),
+        ("efe", "ề"),
+        ("ere", "ể"),
         ("exe", "ễ"),
         // iê (ie): i + e + tone + e (z=cancel is consonant, not included)
-        ("ieje", "i\u{1ec7}"), ("iese", "i\u{1ebf}"), ("iefe", "i\u{1ec1}"),
-        ("iere", "i\u{1ec3}"), ("iexe", "i\u{1ec5}"),
+        ("ieje", "i\u{1ec7}"),
+        ("iese", "i\u{1ebf}"),
+        ("iefe", "i\u{1ec1}"),
+        ("iere", "i\u{1ec3}"),
+        ("iexe", "i\u{1ec5}"),
         // yê (ye): y + e + tone + e
-        ("yeje", "yệ"), ("yese", "yế"), ("yefe", "yề"),
+        ("yeje", "yệ"),
+        ("yese", "yế"),
+        ("yefe", "yề"),
         // uê (ue): u + e + tone + e
-        ("ueje", "uệ"), ("uese", "uế"), ("uefe", "uề"),
+        ("ueje", "uệ"),
+        ("uese", "uế"),
+        ("uefe", "uề"),
         // glide + circumflex + mid-tone
-        ("quyeje", "quyệ"), ("hueje", "huệ"),
+        ("quyeje", "quyệ"),
+        ("hueje", "huệ"),
         // English words should NOT be transformed (no ee mid-tone with onset)
-        ("reset", "reset"), ("telex", "telex"),
+        ("reset", "reset"),
+        ("telex", "telex"),
         // z as consonant (not tone cancel when no tone is set yet)
-        ("azure", "azure"), ("jazz", "jazz"),
+        ("azure", "azure"),
+        ("jazz", "jazz"),
     ];
 
     for &(input, expected) in cases {
@@ -2197,14 +2337,14 @@ fn z_tone_cancel_with_existing_tone() {
     // Telex 'z' should still cancel an existing tone.
     let cases: &[(&str, &str)] = &[
         // single vowel + tone + z cancel
-        ("asz", "a"),   // s= sắc, z= cancel → a
-        ("afz", "a"),   // f= huyền, z= cancel → a
-        ("arz", "a"),   // r= hỏi, z= cancel → a
-        ("axz", "a"),   // x= ngã, z= cancel → a
-        ("ajz", "a"),   // j= nặng, z= cancel → a
+        ("asz", "a"), // s= sắc, z= cancel → a
+        ("afz", "a"), // f= huyền, z= cancel → a
+        ("arz", "a"), // r= hỏi, z= cancel → a
+        ("axz", "a"), // x= ngã, z= cancel → a
+        ("ajz", "a"), // j= nặng, z= cancel → a
         // override then cancel
-        ("asjz", "a"),  // s= sắc, j= nặng (override), z= cancel → a
-        ("afsz", "a"),  // f= huyền, s= sắc (override), z= cancel → a
+        ("asjz", "a"), // s= sắc, j= nặng (override), z= cancel → a
+        ("afsz", "a"), // f= huyền, s= sắc (override), z= cancel → a
         // z after modifier (no tone set) → z is consonant
         ("owz", "owz"), // ow= ơ, z= consonant (no tone to cancel)
         ("awz", "awz"), // aw= ă, z= consonant (no tone to cancel)
@@ -2228,17 +2368,17 @@ fn vni_zero_as_consonant_when_no_tone() {
     // VNI '0' (tone_val == 0) should be treated as a literal when there is
     // no existing tone to cancel, same as Telex 'z'.
     let cases: &[(&str, &str)] = &[
-        ("a0", "a0"),    // 0 after vowel, no tone → literal
+        ("a0", "a0"), // 0 after vowel, no tone → literal
         ("e0", "e0"),
         ("o0", "o0"),
-        ("0a", "0a"),    // 0 at start
-        ("a00", "a00"),  // multiple 0
+        ("0a", "0a"),   // 0 at start
+        ("a00", "a00"), // multiple 0
         // 0 cancel with existing tone (should work)
-        ("a10", "a"),    // 1= sắc, 0= cancel → a
-        ("a20", "a"),    // 2= huyền, 0= cancel → a
-        ("a30", "a"),    // 3= hỏi, 0= cancel → a
-        ("a40", "a"),    // 4= ngã, 0= cancel → a
-        ("a50", "a"),    // 5= nặng, 0= cancel → a
+        ("a10", "a"), // 1= sắc, 0= cancel → a
+        ("a20", "a"), // 2= huyền, 0= cancel → a
+        ("a30", "a"), // 3= hỏi, 0= cancel → a
+        ("a40", "a"), // 4= ngã, 0= cancel → a
+        ("a50", "a"), // 5= nặng, 0= cancel → a
     ];
 
     for &(input, expected) in cases {
@@ -2258,16 +2398,20 @@ fn mid_nucleus_tone_with_various_codas() {
     // which passes through invalid syllables).
     let cases: &[(&str, &str)] = &[
         // â + coda: t, p, c, ch, m
-        ("lajat", "lật"), ("lajap", "lập"),
+        ("lajat", "lật"),
+        ("lajap", "lập"),
         ("ngajac", "ngậc"),
         ("thajach", "thậch"),
         ("lajam", "lậm"),
         // ô + coda: n, p, ng
-        ("tojon", "tộn"), ("tojop", "tộp"),
+        ("tojon", "tộn"),
+        ("tojop", "tộp"),
         ("ngojong", "ngộng"),
         // iê + coda: n, c, ch, m
-        ("iejen", "iện"), ("iejec", "iệc"),
-        ("iejech", "iệch"), ("iejem", "iệm"),
+        ("iejen", "iện"),
+        ("iejec", "iệc"),
+        ("iejech", "iệch"),
+        ("iejem", "iệm"),
         // uê + coda: n → uện (not uyên)
         ("uejen", "uện"),
     ];
@@ -2302,19 +2446,28 @@ fn mid_nucleus_tone_via_diff() {
 
     let cases: &[(&str, &str)] = &[
         // â (aa) mid-tone
-        ("aja", "ậ"), ("thajat", "thật"),
-        ("thafat", "thầt"), ("thaxat", "thẫt"),
+        ("aja", "ậ"),
+        ("thajat", "thật"),
+        ("thafat", "thầt"),
+        ("thaxat", "thẫt"),
         // ô (oo) mid-tone
-        ("ojo", "ộ"), ("tojot", "tột"),
-        ("tofot", "tồt"), ("toxot", "tỗt"),
+        ("ojo", "ộ"),
+        ("tojot", "tột"),
+        ("tofot", "tồt"),
+        ("toxot", "tỗt"),
         // ê (ee) mid-tone (bare only)
-        ("eje", "ệ"), ("ese", "ế"),
+        ("eje", "ệ"),
+        ("ese", "ế"),
         // iê/yê/uê mid-tone
-        ("ieje", "i\u{1ec7}"), ("yeje", "yệ"), ("ueje", "uệ"),
+        ("ieje", "i\u{1ec7}"),
+        ("yeje", "yệ"),
+        ("ueje", "uệ"),
         // z as consonant
-        ("azure", "azure"), ("jazz", "jazz"),
+        ("azure", "azure"),
+        ("jazz", "jazz"),
         // z between vowels (consonant, not mid-nucleus)
-        ("aza", "aza"), ("thaza", "thaza"),
+        ("aza", "aza"),
+        ("thaza", "thaza"),
     ];
 
     for &(input, expected) in cases {
@@ -2334,13 +2487,13 @@ fn mid_nucleus_tone_override() {
     // override the tone (last tone wins).
     let cases: &[(&str, &str)] = &[
         // â + nặng (mid) then sắc (override)
-        ("ajas", "ấ"),   // a+j+a=ậ, s= sắc → ấ
+        ("ajas", "ấ"), // a+j+a=ậ, s= sắc → ấ
         // â + sắc (mid) then huyền (override)
-        ("asaf", "ầ"),   // a+s+a=ấ, f= huyền → ầ
+        ("asaf", "ầ"), // a+s+a=ấ, f= huyền → ầ
         // ô + nặng (mid) then hỏi (override)
-        ("ojor", "ổ"),   // o+j+o=ộ, r= hỏi → ổ
+        ("ojor", "ổ"), // o+j+o=ộ, r= hỏi → ổ
         // iê + nặng (mid) then sắc (override)
-        ("iejes", "i\u{1ebf}"),  // i+e+j+e=iệ, s= sắc → iế
+        ("iejes", "i\u{1ebf}"), // i+e+j+e=iệ, s= sắc → iế
     ];
 
     for &(input, expected) in cases {
@@ -2362,11 +2515,11 @@ fn mid_nucleus_tone_double_cancel() {
     // Vietnamese → passthrough.
     let cases: &[(&str, &str)] = &[
         // â + sắc (mid) then sắc again (cancel) → âs (invalid) → passthrough
-        ("asas", "asa"),   // a+s+a=ấ, s= cancel → â+s → asa (passthrough)
+        ("asas", "asa"), // a+s+a=ấ, s= cancel → â+s → asa (passthrough)
         // â + huyền (mid) then huyền again (cancel) → âf (invalid) → passthrough
-        ("afaf", "afa"),   // a+f+a=ầ, f= cancel → â+f → afa (passthrough)
+        ("afaf", "afa"), // a+f+a=ầ, f= cancel → â+f → afa (passthrough)
         // ô + sắc (mid) then sắc again (cancel) → ôs (invalid) → passthrough
-        ("osos", "oso"),   // o+s+o=ố, s= cancel → ô+s → oso (passthrough)
+        ("osos", "oso"), // o+s+o=ố, s= cancel → ô+s → oso (passthrough)
         // iê + nặng (mid) then nặng again (cancel) → iêj (invalid) → passthrough
         ("iejej", "ieje"), // i+e+j+e=iệ, j= cancel → iê+j → ieje (passthrough)
     ];
@@ -2930,6 +3083,7 @@ fn test_special_nuclei_tone_placement() {
     // ươ formation via uw + ow sequence: th + u + w + o + n + g + s
     // Current behavior: w applies to u first, then tone applies
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     let result = type_seq(&mut e, "thuongs");
     // Engine produces "thúong" - tone on first vowel, w modifies later
     // This documents current behavior; may need nucleus table fix for "thương"
@@ -2942,6 +3096,7 @@ fn test_special_nuclei_tone_placement() {
     // uô formation: th + u + o + w modifies first vowel (ư) not second
     // thuocws → thước (w applies to u → ư, then tone s on ư)
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     assert_eq!(
         type_seq(&mut e, "thuocws"),
         "thước",
@@ -2951,6 +3106,7 @@ fn test_special_nuclei_tone_placement() {
     // oă formation: o + a + w → oă, then ng coda, then x tone
     // Tone placement depends on nucleus table definition
     let mut e = UltraFastViEngine::new();
+    e.set_modern_orthography(true);
     let result = type_seq(&mut e, "hoangx");
     // Document actual behavior: tone applies to first vowel in nucleus
     assert!(
@@ -3215,5 +3371,117 @@ mod ghost_regression_tests {
         screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
         screen.push_str(suffix);
         assert_eq!(screen, "thạt");
+    }
+}
+
+// ===========================================================================
+// Bug #11: punctuation `/` `\` `-` `_` etc. must act as word boundaries so
+// Vietnamese transforms work after them. Previously only `.,!?;:"'()[]{} \n\r\t`
+// were boundaries, so `/duowcs` produced `/duowcs` (literal) instead of
+// `/dước` because the leading `/` was pushed as a consonant into the onset,
+// failing `is_legal_onset` and silently disabling `w` horn application.
+// ===========================================================================
+
+#[cfg(test)]
+mod word_boundary_punctuation_tests {
+    use crate::UltraFastViEngine;
+    use crate::diff::Diffable;
+
+    fn type_diff(e: &mut UltraFastViEngine, s: &str) -> String {
+        let mut screen = String::new();
+        for ch in s.chars() {
+            let (bs, suffix) = e.feed_diff(ch);
+            let sc: Vec<char> = screen.chars().collect();
+            screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+            screen.push_str(suffix);
+        }
+        screen
+    }
+
+    #[test]
+    fn slash_then_duowcs_produces_duoc_with_sac() {
+        let mut e = UltraFastViEngine::new();
+        // `duowcs` = d + ươ + c + sắc → dước (no đ because user typed `d` once)
+        assert_eq!(type_diff(&mut e, "/duowcs"), "/dước");
+    }
+
+    #[test]
+    fn slash_then_dduowcs_produces_duoc_with_d_and_sac() {
+        let mut e = UltraFastViEngine::new();
+        // `dduowcs` = đ + ươ + c + sắc → đước
+        assert_eq!(type_diff(&mut e, "/dduowcs"), "/đước");
+    }
+
+    #[test]
+    fn backslash_boundary() {
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, "\\duowcs"), "\\dước");
+    }
+
+    #[test]
+    fn dash_boundary() {
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, "tieengs-dauw"), "tiếng-dău");
+    }
+
+    #[test]
+    fn underscore_boundary() {
+        let mut e = UltraFastViEngine::new();
+        // `bee` → bê (ee→ê), then `f` is huyền tone → bề. The engine processes
+        // `bee` as a valid Vietnamese syllable; `test` also gets V-C-V split.
+        assert_eq!(type_diff(&mut e, "test_beef"), "tét_bề");
+    }
+
+    #[test]
+    fn url_passthrough() {
+        let mut e = UltraFastViEngine::new();
+        // URL with `://` — every punctuation is a boundary; letters between are
+        // English passthrough (no valid VN syllable triggers a transform).
+        assert_eq!(type_diff(&mut e, "http://abc.com"), "http://abc.com");
+    }
+
+    #[test]
+    fn at_sign_boundary() {
+        let mut e = UltraFastViEngine::new();
+        e.set_modern_orthography(true);
+        // `user` gets V-C-V split into `u` + `sẻ` (both valid VN syllables),
+        // then `@` boundary, then `hoas` → `hoá`. This is correct engine behaviour:
+        // it doesn't know `user` is English.
+        assert_eq!(type_diff(&mut e, "user@hoas"), "usẻ@hoá");
+    }
+
+    #[test]
+    fn hash_boundary() {
+        let mut e = UltraFastViEngine::new();
+        // `cai` → `cái` (i gets sắc tone). The engine processes `caii` as
+        // `cái` + `i` (V-C-V split), but `i` alone is valid so it stays.
+        // Just verify `#` acts as boundary so `cai` after it gets transformed.
+        let result = type_diff(&mut e, "#cais");
+        assert_eq!(result, "#cái");
+    }
+
+    #[test]
+    fn slash_alone_passthrough() {
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, "/"), "/");
+        assert_eq!(type_diff(&mut e, "//"), "//");
+    }
+
+    #[test]
+    fn vni_digit_not_boundary() {
+        // Digits must NOT be word boundaries — VNI uses 0-9 as tone/modifier keys.
+        let mut e = UltraFastViEngine::new();
+        e.set_input_method(crate::InputMethod::Vni);
+        // `a6` = â, `1` = sắc → `ấ`
+        assert_eq!(type_diff(&mut e, "a61"), "ấ");
+    }
+
+    #[test]
+    fn precomposed_vietnamese_not_boundary() {
+        // Non-ASCII Vietnamese chars must NOT be treated as boundaries — they
+        // are decomposed by `feed()` and flow through the normal path.
+        let mut e = UltraFastViEngine::new();
+        // `ấ` decomposes to a + ^ + sắc; feeding it should not clear state.
+        assert_eq!(type_diff(&mut e, "ấ"), "ấ");
     }
 }

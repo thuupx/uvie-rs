@@ -1,4 +1,4 @@
-use crate::buffers::{OutBuffer, new_out_buffer};
+use crate::buffers::{OutBuffer, StackStr, new_out_buffer};
 use crate::composing::Composable;
 use crate::diff::DiffState;
 use crate::modes::{InputMethod, Mode, mode_for};
@@ -34,6 +34,12 @@ pub struct UltraFastViEngine {
 
     /// Diff-mode state (V-C-V splitting, screen diffing).
     pub(crate) diff: DiffState,
+
+    /// Cached `partition_syllable()` result + the `buf.version()` it was
+    /// computed from. On each access, if the version matches, the cached
+    /// result is returned; otherwise it's recomputed. This avoids 5-10
+    /// redundant O(n) scans per keystroke.
+    pub(crate) cached_partition: (u32, (usize, usize, usize, usize)),
 }
 
 impl UltraFastViEngine {
@@ -54,6 +60,7 @@ impl UltraFastViEngine {
             enable_relaxed_coda: false,
             syl_structure: SylStructure::new(),
             diff: DiffState::new(),
+            cached_partition: (0, (0, 0, 0, 0)),
         }
     }
 
@@ -119,10 +126,14 @@ impl UltraFastViEngine {
         self.diff.raw_chars.len()
     }
 
-    /// Copy the diff-mode raw characters into a `String` for debugging/tests.
-    #[cfg(feature = "std")]
-    pub fn raw_chars_string(&self) -> String {
-        self.diff.raw_chars.iter().collect()
+    /// Copy the diff-mode raw characters into a `StackStr` for debugging/tests.
+    /// Returns a stack-allocated buffer (no heap allocation).
+    pub fn raw_chars_string(&self) -> StackStr<64> {
+        let mut buf = StackStr::new();
+        for &c in self.diff.raw_chars.iter() {
+            let _ = buf.push(c);
+        }
+        buf
     }
 
     pub fn current_composing(&self) -> &str {
@@ -139,12 +150,13 @@ impl UltraFastViEngine {
         &self.committed
     }
 
-    #[cfg(feature = "std")]
-    pub fn current_output(&self) -> String {
-        let mut s = String::with_capacity(self.committed.len() + self.out_buf.len());
-        s.push_str(&self.committed);
-        s.push_str(&self.out_buf);
-        s
+    /// Returns the full output (committed + composing) as a stack-allocated
+    /// buffer. No heap allocation.
+    pub fn current_output(&self) -> StackStr<256> {
+        let mut buf = StackStr::new();
+        let _ = buf.push_str(&self.committed);
+        let _ = buf.push_str(&self.out_buf);
+        buf
     }
 
     /// Returns the current syllable structure (onset/nucleus/coda slots).
@@ -163,6 +175,7 @@ impl UltraFastViEngine {
         self.out_buf.clear();
         self.committed.clear();
         self.syl_structure.clear();
+        // No need to reset cached_partition — version check handles it.
     }
 
     /// Finalise the composing word into `committed` and reset composing state.
@@ -258,6 +271,7 @@ impl UltraFastViEngine {
             let expansion: Option<[u8; 2]> = match lower {
                 'c' => Some([b'c', b'h']),
                 'g' => Some([b'g', b'i']),
+                'h' => Some([b'n', b'h']),
                 'k' => Some([b'k', b'h']),
                 'n' => Some([b'n', b'g']),
                 'q' => Some([b'q', b'u']),

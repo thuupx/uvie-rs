@@ -11,6 +11,7 @@ fn apply_diff(screen: &mut String, bs: usize, suffix: &str) {
 
 fn assert_diff(input: &str, expected: &str) {
     let mut engine = UltraFastViEngine::new();
+    engine.set_modern_orthography(true);
     let mut screen = String::new();
     for ch in input.chars() {
         let (bs, suffix) = engine.feed_diff(ch);
