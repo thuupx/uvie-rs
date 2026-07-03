@@ -432,28 +432,21 @@ impl UltraFastViEngine {
     }
 
     /// Returns true for characters that end the current composing word.
+    ///
+    /// Any ASCII non-alphanumeric character is a word boundary — this covers
+    /// `/`, `\`, `-`, `_`, `@`, `#`, etc. that users type mid-sentence
+    /// (e.g. URLs, paths, code). Without this, a leading `/` would be pushed
+    /// into the buffer as a literal consonant, corrupting `is_legal_onset`
+    /// and silently disabling tone/modifier application for the rest of the
+    /// word (see bug #11: `/duowcs` produced `/duowcs` instead of `/được`).
+    ///
+    /// Digits are NOT boundaries because VNI uses `0-9` as tone/modifier keys.
+    /// Non-ASCII characters (incl. precomposed Vietnamese) are NOT boundaries
+    /// here — they are decomposed by `feed()` and flow through the normal path.
+    /// Unicode whitespace is still a boundary via `is_whitespace()`.
     #[inline]
     pub(crate) fn is_word_boundary(ch: char) -> bool {
-        ch.is_whitespace()
-            || matches!(
-                ch,
-                '.' | ','
-                    | '!'
-                    | '?'
-                    | ';'
-                    | ':'
-                    | '"'
-                    | '\''
-                    | '('
-                    | ')'
-                    | '['
-                    | ']'
-                    | '{'
-                    | '}'
-                    | '\n'
-                    | '\r'
-                    | '\t'
-            )
+        ch.is_whitespace() || (ch.is_ascii() && !ch.is_ascii_alphanumeric())
     }
 
     /// Returns true if the composed output equals the raw input (no Vietnamese transforms).

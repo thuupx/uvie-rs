@@ -258,6 +258,7 @@ impl UltraFastViEngine {
             let expansion: Option<[u8; 2]> = match lower {
                 'c' => Some([b'c', b'h']),
                 'g' => Some([b'g', b'i']),
+                'h' => Some([b'n', b'h']),
                 'k' => Some([b'k', b'h']),
                 'n' => Some([b'n', b'g']),
                 'q' => Some([b'q', b'u']),
