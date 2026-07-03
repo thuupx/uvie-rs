@@ -7,6 +7,22 @@ use crate::buffers::{CharVec, OutBuffer, new_out_buffer};
 use crate::composing::Composable;
 use crate::engine::UltraFastViEngine;
 use crate::modes::{IS_TONE_KEY, Mode};
+use crate::syllable::SylBuf;
+
+/// Snapshot of the composing state after a keystroke, used for O(1) backspace.
+/// All fields are stack-allocated (no heap).
+#[derive(Clone)]
+pub struct ComposingSnapshot {
+    pub buf: SylBuf,
+    pub raw_len: usize,
+    pub raw_chars: CharVec<24>,
+    pub key_log: CharVec<24>,
+    pub prev_rendered: OutBuffer,
+    pub prev_inner_render: OutBuffer,
+    pub last_valid_raw_len: usize,
+    pub last_valid_coda_start: usize,
+    pub last_valid_out: OutBuffer,
+}
 
 /// Diff-mode state: tracks what's on screen vs what the engine produced.
 pub struct DiffState {
@@ -39,6 +55,10 @@ pub struct DiffState {
     pub scratch_optimistic: OutBuffer,
     /// Scratch buffer for display_composed (avoids heap alloc per keystroke).
     pub scratch_display: OutBuffer,
+    /// Snapshot stack: one entry per keystroke, enabling O(1) backspace
+    /// instead of O(n) replay. Cleared on word boundary, commit, V-C-V split.
+    pub snapshots: [Option<ComposingSnapshot>; 24],
+    pub snapshot_count: usize,
 }
 
 impl Default for DiffState {
@@ -48,19 +68,21 @@ impl Default for DiffState {
 }
 
 impl DiffState {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             raw_chars: CharVec::new(),
             key_log: CharVec::new(),
-            prev_rendered: new_out_buffer(),
-            prev_inner_render: new_out_buffer(),
+            prev_rendered: OutBuffer::new(),
+            prev_inner_render: OutBuffer::new(),
             last_valid_raw_len: 0,
             last_valid_coda_start: 0,
-            last_valid_out: new_out_buffer(),
-            diff_committed: new_out_buffer(),
-            diff_suffix: new_out_buffer(),
-            scratch_optimistic: new_out_buffer(),
-            scratch_display: new_out_buffer(),
+            last_valid_out: OutBuffer::new(),
+            diff_committed: OutBuffer::new(),
+            diff_suffix: OutBuffer::new(),
+            scratch_optimistic: OutBuffer::new(),
+            scratch_display: OutBuffer::new(),
+            snapshots: [const { None }; 24],
+            snapshot_count: 0,
         }
     }
 
@@ -76,6 +98,31 @@ impl DiffState {
         self.diff_suffix.clear();
         self.scratch_optimistic.clear();
         self.scratch_display.clear();
+        // Clear snapshots
+        for s in &mut self.snapshots {
+            *s = None;
+        }
+        self.snapshot_count = 0;
+    }
+
+    /// Push a snapshot of the current composing state.
+    /// Called after each successful feed_diff_core.
+    #[inline]
+    pub fn push_snapshot(&mut self, snap: ComposingSnapshot) {
+        if self.snapshot_count < 24 {
+            self.snapshots[self.snapshot_count] = Some(snap);
+            self.snapshot_count += 1;
+        }
+    }
+
+    /// Pop and return the last snapshot, or None if empty.
+    #[inline]
+    pub fn pop_snapshot(&mut self) -> Option<ComposingSnapshot> {
+        if self.snapshot_count == 0 {
+            return None;
+        }
+        self.snapshot_count -= 1;
+        self.snapshots[self.snapshot_count].take()
     }
 }
 
@@ -94,20 +141,53 @@ pub trait Diffable {
 
 impl Diffable for UltraFastViEngine {
     fn feed_diff(&mut self, ch: char) -> (usize, &str) {
-        // Append to the lossless keystroke log before running the core pipeline.
-        // The core may clear/truncate `key_log` on word boundary, full-buffer or
-        // V-C-V split so that it always mirrors the *composing* portion only.
-        // `key_log` is NEVER truncated on double-tone-cancel (unlike `raw_chars`),
-        // which is what lets `backspace_diff` faithfully rebuild the state.
+        // Word boundary: commit, clear snapshots, return char directly.
+        if Self::is_word_boundary(ch) {
+            for s in &mut self.diff.snapshots {
+                *s = None;
+            }
+            self.diff.snapshot_count = 0;
+            let _ = self.diff.key_log.try_push(ch);
+            return self.feed_diff_core(ch);
+        }
+
+        // Push snapshot of state BEFORE this keystroke (for O(1) backspace).
+        // This captures the state that backspace should restore to.
+        self.diff.push_snapshot(ComposingSnapshot {
+            buf: self.buf.clone(),
+            raw_len: self.raw_len,
+            raw_chars: self.diff.raw_chars.clone(),
+            key_log: self.diff.key_log.clone(),
+            prev_rendered: self.diff.prev_rendered.clone(),
+            prev_inner_render: self.diff.prev_inner_render.clone(),
+            last_valid_raw_len: self.diff.last_valid_raw_len,
+            last_valid_coda_start: self.diff.last_valid_coda_start,
+            last_valid_out: self.diff.last_valid_out.clone(),
+        });
+
+        // Append to key_log and run the core pipeline.
         let _ = self.diff.key_log.try_push(ch);
-        self.feed_diff_core(ch)
+        let (bs, _suffix) = self.feed_diff_core(ch);
+
+        // Check if V-C-V split or full-buffer happened: key_log would be
+        // shorter than snapshot_count (the pre-keystroke snapshots were
+        // for the old, longer composing word). Reset snapshots — the first
+        // backspace will use the O(n) replay fallback, which is correct
+        // because the "before" state for the split vowel never existed
+        // in the forward path.
+        if self.diff.key_log.len() < self.diff.snapshot_count {
+            for s in &mut self.diff.snapshots {
+                *s = None;
+            }
+            self.diff.snapshot_count = 0;
+        }
+
+        (bs, &self.diff.diff_suffix)
     }
 
     fn backspace_diff(&mut self) -> (usize, &str) {
         // No composing keystrokes left → fall back to popping auto-committed text
         // (V-C-V split output) one rendered char at a time, matching the screen.
-        // `key_log` is the source of truth for the composing portion; when it is
-        // empty the composing region is gone and we erase from `diff_committed`.
         if self.diff.key_log.is_empty() {
             if !self.diff.diff_committed.is_empty() {
                 self.diff.diff_committed.pop();
@@ -118,21 +198,39 @@ impl Diffable for UltraFastViEngine {
             return (0, &self.diff.diff_suffix);
         }
 
-        // Snapshot the on-screen composing text *before* the rebuild.
-        let prev = self.diff.prev_rendered.clone();
+        // O(1) fast path: pop snapshot and restore state directly.
+        // The snapshot was pushed BEFORE the keystroke, so it contains the
+        // state that backspace should restore to.
+        if let Some(snap) = self.diff.pop_snapshot() {
+            // Snapshot the on-screen text before restore.
+            let prev = self.diff.prev_rendered.clone();
 
-        // Drop the last logical keystroke and rebuild the composing portion from
-        // the lossless `key_log`. Replaying through `feed_diff_core` re-runs every
-        // cancel / expansion faithfully, so the rebuilt state is exact — unlike
-        // the old `self.backspace()` which replayed the lossy `self.raw` buffer
-        // and re-applied modifiers the user had deliberately cancelled.
+            // Restore engine state from snapshot.
+            self.buf = snap.buf;
+            self.raw_len = snap.raw_len;
+            self.diff.raw_chars = snap.raw_chars;
+            self.diff.key_log = snap.key_log;
+            self.diff.prev_rendered = snap.prev_rendered.clone();
+            self.diff.prev_inner_render = snap.prev_inner_render;
+            self.diff.last_valid_raw_len = snap.last_valid_raw_len;
+            self.diff.last_valid_coda_start = snap.last_valid_coda_start;
+            self.diff.last_valid_out = snap.last_valid_out;
+
+            // Diff old vs new composing text.
+            let (bs, _) = Self::diff_into(
+                &prev,
+                &self.diff.prev_rendered,
+                &mut self.diff.diff_suffix,
+            );
+            return (bs, &self.diff.diff_suffix);
+        }
+
+        // Fallback: O(n) replay path (used when snapshot stack is empty,
+        // e.g. after V-C-V split or when snapshots were exhausted).
+        let prev = self.diff.prev_rendered.clone();
         self.diff.key_log.pop();
         let log: CharVec<24> = self.diff.key_log.iter().copied().collect();
         self.rebuild_composing(&log);
-
-        // Diff the old vs new *composing* text. `diff_committed` is untouched by
-        // the rebuild, so the committed prefix on screen stays and only the
-        // composing suffix changes — exactly what the host expects.
         let new = self.diff.prev_rendered.clone();
         let (bs, _) = Self::diff_into(&prev, &new, &mut self.diff.diff_suffix);
         (bs, &self.diff.diff_suffix)
