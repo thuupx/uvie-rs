@@ -2,7 +2,7 @@
 
 use crate::engine::UltraFastViEngine;
 use crate::modes::{IS_MODIFIER, IS_TONE_KEY, IS_VOWEL};
-use crate::modifier::ModifierHandler;
+use crate::modifier::{DoubleVowelLookup, ModifierHandler};
 use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_LITERAL, F_TONE_SET, Syl};
 use crate::tone_handler::ToneHandler;
 use crate::validation::SyllableValidator;
