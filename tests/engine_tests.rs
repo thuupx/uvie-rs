@@ -1,5 +1,5 @@
-use crate::diff::Diffable;
-use crate::{InputMethod, NucleusKind, OnsetKind, UltraFastViEngine};
+use uvie::diff::Diffable;
+use uvie::{InputMethod, NucleusKind, OnsetKind, UltraFastViEngine};
 
 /// Simulates IME typing: whitespace commits the current composing word,
 /// and the final result includes committed text + any remaining composing text.
@@ -1131,8 +1131,8 @@ fn diff_triple_cancel_preserves_trailing_chars() {
 
 #[cfg(test)]
 mod vcv_tests {
-    use crate::UltraFastViEngine;
-    use crate::diff::Diffable;
+    use uvie::UltraFastViEngine;
+    use uvie::diff::Diffable;
 
     fn type_diff(e: &mut UltraFastViEngine, s: &str) -> String {
         let mut screen = String::new();
@@ -1578,7 +1578,7 @@ fn debug_gif_inner() {
 fn test_vcv_backspace_retype_composes_correctly() {
     // Regression test for intermittent typing failure after backspace + retype.
     // After V-C-V split, backspace, then retyping should still produce composed characters.
-    use crate::diff::Diffable;
+    use uvie::diff::Diffable;
 
     let mut e = UltraFastViEngine::new();
     let mut screen = String::new();
@@ -1638,7 +1638,7 @@ fn test_vcv_backspace_retype_composes_correctly() {
 #[test]
 fn test_vcv_multiple_backspace_then_retype() {
     // Test multiple backspaces after V-C-V split, then retype
-    use crate::diff::Diffable;
+    use uvie::diff::Diffable;
 
     let mut e = UltraFastViEngine::new();
     let mut screen = String::new();
@@ -1704,7 +1704,7 @@ fn debug_gif_step_by_step() {
 fn debug_gif_via_is_valid() {
     // Check: does "gi" validate as Vietnamese?
     // onset = [g], nucleus = [i], coda = []
-    use crate::tables::{is_legal_coda, is_legal_nucleus, is_legal_onset};
+    use uvie::tables::{is_legal_coda, is_legal_nucleus, is_legal_onset};
     assert!(is_legal_onset(b"g"), "g is legal onset");
     assert!(is_legal_nucleus(&['i']), "i is legal nucleus");
     assert!(is_legal_coda(b"", false), "empty coda is legal");
@@ -2431,7 +2431,7 @@ fn mid_nucleus_tone_with_various_codas() {
 fn mid_nucleus_tone_via_diff() {
     // Verify mid-nucleus tone works through the diff (feed_diff) layer,
     // which is what the host app actually uses.
-    use crate::diff::Diffable;
+    use uvie::diff::Diffable;
 
     fn type_diff(e: &mut UltraFastViEngine, s: &str) -> String {
         let mut screen = String::new();
@@ -3164,8 +3164,8 @@ fn test_double_consonant_onsets() {
 
 #[cfg(test)]
 mod ghost_regression_tests {
-    use crate::UltraFastViEngine;
-    use crate::diff::Diffable;
+    use uvie::UltraFastViEngine;
+    use uvie::diff::Diffable;
 
     fn type_diff(e: &mut UltraFastViEngine, s: &str) -> String {
         let mut screen = String::new();
@@ -3384,8 +3384,8 @@ mod ghost_regression_tests {
 
 #[cfg(test)]
 mod word_boundary_punctuation_tests {
-    use crate::UltraFastViEngine;
-    use crate::diff::Diffable;
+    use uvie::UltraFastViEngine;
+    use uvie::diff::Diffable;
 
     fn type_diff(e: &mut UltraFastViEngine, s: &str) -> String {
         let mut screen = String::new();
@@ -3471,7 +3471,7 @@ mod word_boundary_punctuation_tests {
     fn vni_digit_not_boundary() {
         // Digits must NOT be word boundaries — VNI uses 0-9 as tone/modifier keys.
         let mut e = UltraFastViEngine::new();
-        e.set_input_method(crate::InputMethod::Vni);
+        e.set_input_method(uvie::InputMethod::Vni);
         // `a6` = â, `1` = sắc → `ấ`
         assert_eq!(type_diff(&mut e, "a61"), "ấ");
     }
