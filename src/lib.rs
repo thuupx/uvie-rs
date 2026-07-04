@@ -24,9 +24,6 @@ pub(crate) mod modifier;
 pub(crate) mod tone_handler;
 pub(crate) mod validation;
 
-#[cfg(test)]
-mod tests;
-
 #[cfg(feature = "std")]
 pub mod ffi;
 

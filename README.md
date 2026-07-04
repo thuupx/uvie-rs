@@ -2,7 +2,7 @@
 
 Ultra-fast Vietnamese input method engine (Telex, VNI) written in Rust.
 
-A `no_std` / `no-alloc` compatible library with zero external dependencies. Designed for sub-microsecond latency per keystroke through incremental state updates and positive syllable validation.
+A `no_std` / `no-alloc` compatible library with **zero external dependencies**. Designed for sub-microsecond latency per keystroke through incremental state updates, positive syllable validation, and 100% stack-allocated hot paths.
 
 **macOS implementation**: See [UVieKey](https://github.com/thuupx/UVieKey) for the macOS menu bar app that uses this engine.
 
@@ -10,11 +10,14 @@ A `no_std` / `no-alloc` compatible library with zero external dependencies. Desi
 
 - **Telex & VNI**: Full support for both popular input methods.
 - **Modern orthography**: Optional tone placement per new standard (e.g. `hoas` → `hoá`).
+- **Relaxed coda mode**: Optional lenient coda validation for flexible typing.
 - **Per-character state**: Each keystroke gets its own state entry; transforms are bit-flips, not multi-pass reordering.
 - **Validate raw keystrokes**: Checks raw ASCII sequence against positive syllable tables before any transform. English passthrough is automatic.
 - **Diff-based API**: Returns `(backspace_count, suffix_to_type)` per keystroke for minimal screen updates.
-- **No heap in hot path**: Fixed stack buffers, zero allocation during normal operation.
-- **`no_std` compatible**: Works in embedded or constrained environments via the `heapless` feature.
+- **O(1) backspace**: Snapshot stack mechanism eliminates O(n²) rebuild on backspace.
+- **No heap in hot path**: All buffer types (`StackStr`, `CharVec`, `SylBuf`) are stack-allocated — zero allocation per keystroke.
+- **Zero dependencies**: No `heapless`, no external crates — pure Rust, `no_std`-compatible out of the box.
+- **`no_std` compatible**: Works in embedded or constrained environments with `--no-default-features`.
 
 ## Architecture
 
@@ -63,10 +66,10 @@ cargo bench
 cargo test
 ```
 
-For `no_std` / `heapless` builds:
+For `no_std` builds:
 
 ```bash
-cargo build --release --no-default-features --features heapless
+cargo build --release --no-default-features
 ```
 
 ## Prebuilt releases
@@ -92,6 +95,22 @@ Apple Silicon (`cargo bench`), comparison against the `vi` crate:
 | mixed | ~15.8x | ~10.7x |
 | cluster | ~6.7x | ~6.7x |
 | ui | ~5.8x | ~2.8x |
+
+### Diff API performance (v2.1.0, after optimization rounds)
+
+| Benchmark | Original | v2.1.0 | Improvement |
+|-----------|----------|--------|-------------|
+| diff_short / phoos | 569 ns | 307 ns | **-46%** |
+| diff_workaround / chuaw | 637 ns | 374 ns | **-41%** |
+| diff_workaround / ngieengx | 1.18 µs | 674 ns | **-43%** |
+| diff_sentences / long | 10.2 µs | 5.99 µs | **-41%** |
+| diff_backspace / medium | 4.70 µs | 2.41 µs | **-49%** |
+| diff_backspace / long | 4.54 µs | 2.41 µs | **-47%** |
+
+Optimizations: single-pass char counting, `mem::swap`/`mem::take` instead of
+`String::clone`, `StackStr<N>` stack-allocated UTF-8 buffer, version-based
+`partition_syllable()` cache, branch prediction reordering, O(1) backspace
+via snapshot stack, and `thread_local` scratch engine for V-C-V splits.
 
 Full report: [thuupx.github.io/uvie-rs/criterion/report/](https://thuupx.github.io/uvie-rs/criterion/report/)
 

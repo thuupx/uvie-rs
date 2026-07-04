@@ -1,40 +1,19 @@
-//! Modifier key handling (Telex w/d, VNI 6/7/8/9, double-vowel circumflex).
+//! Telex-specific modifier keys: `w` (horn/ư) and `d` (đ).
 
 use crate::engine::UltraFastViEngine;
-use crate::modes::{IS_TONE_KEY, IS_VOWEL};
+use crate::modes::IS_VOWEL;
 use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_HORN, F_LITERAL, Syl};
 use crate::tone_handler::ToneHandler;
 use crate::validation::SyllableValidator;
 
-/// Modifier key handling (circumflex, horn, breve, đ).
-pub(crate) trait ModifierHandler {
-    fn handle_modifier(&mut self, b: u8, caps: bool);
+/// Telex-mode modifier handling (`w` → horn/ư, `d` → đ).
+pub(crate) trait TelexModifier {
     fn handle_telex_w(&mut self, caps: bool);
     fn handle_telex_d(&mut self, caps: bool);
-    fn handle_vni_6(&mut self, caps: bool);
-    fn handle_vni_7(&mut self, caps: bool);
-    fn handle_vni_8(&mut self, caps: bool);
-    fn handle_vni_9(&mut self, caps: bool);
-    fn find_modifier_target_for_double_vowel(&self, b: u8) -> Option<usize>;
     fn try_apply_w_non_cancel(&mut self, idx: usize, nucleus_start: usize, caps: bool) -> bool;
 }
 
-impl ModifierHandler for UltraFastViEngine {
-    #[inline]
-    fn handle_modifier(&mut self, b: u8, caps: bool) {
-        match b {
-            b'w' => self.handle_telex_w(caps),
-            b'd' => self.handle_telex_d(caps),
-            b'6' => self.handle_vni_6(caps),
-            b'7' => self.handle_vni_7(caps),
-            b'8' => self.handle_vni_8(caps),
-            b'9' => self.handle_vni_9(caps),
-            _ => {
-                self.buf.push(Syl::literal(b, caps));
-            }
-        }
-    }
-
+impl TelexModifier for UltraFastViEngine {
     #[inline]
     fn handle_telex_w(&mut self, caps: bool) {
         let n = self.buf.len();
@@ -272,142 +251,5 @@ impl ModifierHandler for UltraFastViEngine {
         }
 
         self.buf.push(Syl::literal(b'd', caps));
-    }
-
-    #[inline]
-    fn handle_vni_6(&mut self, _caps: bool) {
-        for i in (0..self.buf.len()).rev() {
-            let syl = self.buf.get(i);
-            if matches!(syl.base, b'a' | b'e' | b'o') && syl.flags & F_LITERAL == 0 {
-                if syl.flags & F_CIRCUMFLEX != 0 {
-                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
-                    self.buf.set(i, reverted);
-                } else {
-                    let updated = self.buf.get(i).clone().with_circumflex();
-                    self.buf.set(i, updated);
-                }
-                self.reapply_tone_after_nucleus_change();
-                return;
-            }
-            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 {
-                break;
-            }
-        }
-        self.buf.push(Syl::literal(b'6', false));
-    }
-
-    #[inline]
-    fn handle_vni_7(&mut self, _caps: bool) {
-        for i in (0..self.buf.len()).rev() {
-            let syl = self.buf.get(i);
-            if matches!(syl.base, b'o' | b'u') && syl.flags & F_LITERAL == 0 {
-                if syl.flags & F_HORN != 0 {
-                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
-                    self.buf.set(i, reverted);
-                } else {
-                    let updated = self.buf.get(i).clone().with_horn();
-                    self.buf.set(i, updated);
-                }
-                self.reapply_tone_after_nucleus_change();
-                return;
-            }
-            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 {
-                break;
-            }
-        }
-        self.buf.push(Syl::literal(b'7', false));
-    }
-
-    #[inline]
-    fn handle_vni_8(&mut self, _caps: bool) {
-        for i in (0..self.buf.len()).rev() {
-            let syl = self.buf.get(i);
-            if syl.base == b'a' && syl.flags & F_LITERAL == 0 {
-                if syl.flags & F_HORN != 0 {
-                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
-                    self.buf.set(i, reverted);
-                } else {
-                    let updated = self.buf.get(i).clone().with_horn();
-                    self.buf.set(i, updated);
-                }
-                self.reapply_tone_after_nucleus_change();
-                return;
-            }
-            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 {
-                break;
-            }
-        }
-        self.buf.push(Syl::literal(b'8', false));
-    }
-
-    #[inline]
-    fn handle_vni_9(&mut self, _caps: bool) {
-        for i in (0..self.buf.len()).rev() {
-            let syl = self.buf.get(i);
-            if syl.base == b'd' && syl.flags & F_LITERAL == 0 {
-                if syl.flags & F_HORN != 0 {
-                    let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
-                    self.buf.set(i, reverted);
-                } else {
-                    let new_syl = Syl {
-                        base: b'd',
-                        out: if syl.flags & F_CAPS != 0 { 'Đ' } else { 'đ' },
-                        tone: 0,
-                        flags: syl.flags | F_HORN,
-                    };
-                    self.buf.set(i, new_syl);
-                }
-                return;
-            }
-            if self.mode.classify[syl.base as usize] & IS_VOWEL == 0 {
-                break;
-            }
-        }
-        self.buf.push(Syl::literal(b'9', false));
-    }
-
-    #[inline]
-    fn find_modifier_target_for_double_vowel(&self, b: u8) -> Option<usize> {
-        if self.raw_len >= 3 {
-            let prev = self.raw[self.raw_len - 2];
-            let prev2 = self.raw[self.raw_len - 3];
-            if self.mode.classify[prev as usize] & IS_TONE_KEY != 0 && prev2 == b {
-                // Allow the tone key to sit between the two halves of an
-                // incomplete circumflex nucleus:
-                // - iê / yê / uê: i/y/u + e + tone + e (e.g. `ieje` -> iệ)
-                // - ê:            e + tone + e         (e.g. `eje` -> ệ)
-                // - â:            a + tone + a         (e.g. `aja` -> ậ)
-                // - ô:            o + tone + o         (e.g. `ojo` -> ộ)
-                if b == b'e' {
-                    // For ê, only allow bare (e + tone + e) or glide (i/y/u + e + tone + e).
-                    // Consonant onsets are NOT allowed because they conflict with
-                    // English words like "reset", "telex" where the consonant
-                    // between two e's is not a tone key.
-                    if self.raw_len >= 4 {
-                        let prev3 = self.raw[self.raw_len - 4];
-                        if prev3 != b'e' && !matches!(prev3, b'i' | b'y' | b'u') {
-                            return None;
-                        }
-                    }
-                    // raw_len == 3: bare "e + tone + e" — allowed, fall through.
-                } else if b != b'a' && b != b'o' {
-                    return None;
-                }
-                // For a/o/e (bare), the doubled vowel itself is the nucleus —
-                // no glide prefix required, so fall through to the normal search.
-            }
-        }
-
-        let n = self.buf.len();
-        for i in (0..n).rev() {
-            let s = self.buf.get(i);
-            if s.base == b && s.flags & F_LITERAL == 0 && s.flags & F_HORN == 0 {
-                return Some(i);
-            }
-            if s.base == b'd' && s.flags & F_HORN != 0 {
-                return None;
-            }
-        }
-        None
     }
 }
