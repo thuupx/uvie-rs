@@ -151,12 +151,9 @@ impl Composable for UltraFastViEngine {
         // the "ươ" diphthong, mirroring the "uo" + w → "ươ" shortcut but for
         // the reverse typing order (uw first, then o). Without this,
         // "nguwocs" produces "ngứoc" instead of "ngước".
-        if b == b'o' && self.buf.len() > 0 {
+        if b == b'o' && !self.buf.is_empty() {
             let prev = self.buf.get(self.buf.len() - 1);
-            if prev.base == b'u'
-                && prev.flags & F_HORN != 0
-                && prev.flags & F_CIRCUMFLEX == 0
-            {
+            if prev.base == b'u' && prev.flags & F_HORN != 0 && prev.flags & F_CIRCUMFLEX == 0 {
                 let promoted = Syl::literal(b'o', caps).with_horn();
                 self.buf.push(promoted);
                 self.reapply_tone_after_nucleus_change();
