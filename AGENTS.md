@@ -4,7 +4,7 @@
 
 ```bash
 rtk cargo build --release          # Build release
-rtk cargo test --release           # Run all tests (215 tests)
+rtk cargo test --release           # Run all tests (231 tests)
 rtk cargo bench --bench perf -- --warm-up-time 1 --measurement-time 3  # Benchmarks
 ```
 
@@ -75,6 +75,23 @@ Was calling `.chars().count()` twice. Fixed with single-pass counting.
 - Traditional orthography: tone on first vowel for open syllables (hoá),
   second vowel for syllables with coda (hoạt, đoán)
 - `apply_coda_tone_rule()` fixes tone placement at render time
+
+## Coda Shorthands (teen code)
+
+The engine accepts two kinds of final-consonant shorthands, both rendered
+**verbatim** (the typed char is kept, not converted):
+
+| Shorthand | Stands for | Mode | Tone rule |
+|-----------|------------|------|-----------|
+| `g`       | `ng`       | `--relaxed-coda` toggle | any tone (like ng) |
+| `h`       | `nh`       | `--relaxed-coda` toggle | any tone (like nh) |
+| `k`       | `c`        | **always active**       | sắc/nặng only (like c) |
+| `nk`      | `nh`       | **always active**       | any tone (like nh) |
+
+The `k` / `nk` shorthands are always on (no toggle) to support common
+teen code and province spellings: "đắk", "Đăk Lak", "đỉnk" (= đỉnh).
+Implementation lives in `src/tables/coda.rs` (`is_legal_coda`,
+`tone_allowed_for_coda`) — validation only, no rendering conversion.
 
 ## Benchmark Cases
 

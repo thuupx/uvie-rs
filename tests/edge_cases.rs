@@ -220,6 +220,69 @@ fn relaxed_coda_allows_h_shorthand() {
 }
 
 #[test]
+fn teen_coda_k_always_active_for_c() {
+    // `k` is a shorthand for the stopped coda `c` and is ALWAYS active (no
+    // toggle needed). It follows the same tone constraint as `c`: only sắc
+    // and nặng tones are allowed. Rendered verbatim — the engine keeps the
+    // typed `k` (e.g. "Đắk Lắk" province spelling, "đắk" teen code).
+
+    // Strict mode (relaxed coda OFF): k is still accepted as a coda.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddawsk"), "đắk"); // sắc tone OK
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddawjk"), "đặk"); // nặng tone OK
+
+    // Non-stopped tones fall through to literal passthrough (like `c`).
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddawfk"), "đawfk"); // huyền -> passthrough
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddawrk"), "đawrk"); // hỏi -> passthrough
+
+    // Province name "Đắk Lắk" — both syllables use the k coda.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "Ddawk Lak"), "Đăk Lak");
+
+    // Standard `c` coda still works alongside the k shorthand.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddawsc"), "đắc");
+
+    // Relaxed mode does not change k behaviour (already always active).
+    let mut e = UltraFastViEngine::new();
+    e.set_relaxed_coda(true);
+    assert_eq!(type_seq(&mut e, "ddawsk"), "đắk");
+}
+
+#[test]
+fn teen_coda_nk_always_active_for_nh() {
+    // `nk` is a shorthand for `nh` and is ALWAYS active (no toggle needed).
+    // It follows the same tone constraint as `nh`: any tone is allowed.
+    // Rendered verbatim — the engine keeps the typed `nk` (e.g. "đỉnk" is
+    // teen code for "đỉnh").
+
+    // Strict mode (relaxed coda OFF): nk is still accepted as a coda and
+    // allows all tones (like nh).
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddirnk"), "đỉnk"); // hỏi
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddifnk"), "đìnk"); // huyền
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddixnk"), "đĩnk"); // ngã
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddasnk"), "đánk"); // sắc
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddajnk"), "đạnk"); // nặng
+
+    // Standard `nh` coda still works alongside the nk shorthand.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ddirnh"), "đỉnh");
+
+    // Relaxed mode does not change nk behaviour (already always active).
+    let mut e = UltraFastViEngine::new();
+    e.set_relaxed_coda(true);
+    assert_eq!(type_seq(&mut e, "ddirnk"), "đỉnk");
+}
+
+#[test]
 fn no_bubble_across_consonants() {
     // reset: e..e separated by consonant 's' -> no bubble, stays "reset"
     let mut e = UltraFastViEngine::new();

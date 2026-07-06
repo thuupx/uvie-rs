@@ -25,15 +25,27 @@ pub(crate) static LEGAL_CODAS: &[&[u8]] = &[
 /// digraph but the engine keeps the typed char):
 ///   - `g` (shorthand for `ng`, e.g. "đặg")
 ///   - `h` (shorthand for `nh`, e.g. "nhàh")
+///
+/// The following teen-code shorthands are **always active** (no toggle needed),
+/// rendered verbatim like the relaxed shorthands above:
+///   - `k`  (shorthand for `c`,  e.g. "đắk" → Đắk Lắk province spelling)
+///   - `nk` (shorthand for `nh`, e.g. "đỉnk" teen code for "đỉnh")
 pub fn is_legal_coda(coda: &[u8], relaxed: bool) -> bool {
     match coda.len() {
         0 => true,
         1 => match coda[0] {
             b't' | b'p' | b'c' | b'n' | b'm' | b'i' | b'y' | b'u' | b'o' => true,
+            // Teen-code shorthand for `c` — always active (e.g. "đắk").
+            b'k' => true,
             b'g' | b'h' if relaxed => true,
             _ => false,
         },
-        2 => matches!(coda, b"ng" | b"nh" | b"ch"),
+        2 => match coda {
+            b"ng" | b"nh" | b"ch" => true,
+            // Teen-code shorthand for `nh` — always active (e.g. "đỉnk").
+            b"nk" => true,
+            _ => false,
+        },
         _ => false,
     }
 }
@@ -48,6 +60,10 @@ pub fn is_legal_coda(coda: &[u8], relaxed: bool) -> bool {
 ///
 /// In `relaxed` mode, a lone `g` coda is treated as shorthand for `ng` and a
 /// lone `h` coda as shorthand for `nh`; both therefore allow any tone.
+///
+/// The teen-code shorthands `k` (for `c`) and `nk` (for `nh`) are always
+/// active: `k` follows the stopped-coda rule (sắc/nặng only) while `nk`
+/// behaves like `nh` (any tone).
 pub fn tone_allowed_for_coda(coda: &[u8], tone: u8, relaxed: bool) -> bool {
     if tone == 0 {
         return true; // bằng / no-tone always OK
@@ -58,7 +74,8 @@ pub fn tone_allowed_for_coda(coda: &[u8], tone: u8, relaxed: bool) -> bool {
             if relaxed && matches!(coda[0], b'g' | b'h') {
                 return true;
             }
-            if matches!(coda[0], b'c' | b'p' | b't') {
+            // `k` is the stopped coda /k/ (shorthand for `c`): sắc/nặng only.
+            if matches!(coda[0], b'c' | b'p' | b't' | b'k') {
                 matches!(tone, 1 | 5)
             } else {
                 true
@@ -68,6 +85,7 @@ pub fn tone_allowed_for_coda(coda: &[u8], tone: u8, relaxed: bool) -> bool {
             if coda == b"ch" {
                 matches!(tone, 1 | 5)
             } else {
+                // `nk` is shorthand for `nh` — any tone allowed.
                 true
             }
         }

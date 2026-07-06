@@ -56,6 +56,9 @@ fn coda_single() {
     assert!(is_legal_coda(b"h", true));
     assert!(!is_legal_coda(b"g", false));
     assert!(!is_legal_coda(b"h", false));
+    // teen-code: k as shorthand for c — always active (no toggle)
+    assert!(is_legal_coda(b"k", false));
+    assert!(is_legal_coda(b"k", true));
 }
 
 #[test]
@@ -63,6 +66,9 @@ fn coda_digraph() {
     assert!(is_legal_coda(b"ng", false));
     assert!(is_legal_coda(b"nh", false));
     assert!(is_legal_coda(b"ch", false));
+    // teen-code: nk as shorthand for nh — always active (no toggle)
+    assert!(is_legal_coda(b"nk", false));
+    assert!(is_legal_coda(b"nk", true));
 }
 
 #[test]
@@ -90,6 +96,18 @@ fn tone_coda_constraint() {
     assert!(tone_allowed_for_coda(b"g", 4, true));
     assert!(tone_allowed_for_coda(b"h", 3, true));
     assert!(tone_allowed_for_coda(b"h", 2, true));
+    // teen-code: k behaves like c (stopped coda — sắc/nặng only), always active
+    assert!(tone_allowed_for_coda(b"k", 1, false)); // sắc
+    assert!(tone_allowed_for_coda(b"k", 5, false)); // nặng
+    assert!(!tone_allowed_for_coda(b"k", 2, false)); // huyền
+    assert!(!tone_allowed_for_coda(b"k", 3, false)); // hỏi
+    assert!(!tone_allowed_for_coda(b"k", 4, true)); // ngã — even in relaxed
+    // teen-code: nk behaves like nh (any tone), always active
+    assert!(tone_allowed_for_coda(b"nk", 1, false)); // sắc
+    assert!(tone_allowed_for_coda(b"nk", 2, false)); // huyền
+    assert!(tone_allowed_for_coda(b"nk", 3, false)); // hỏi
+    assert!(tone_allowed_for_coda(b"nk", 4, false)); // ngã
+    assert!(tone_allowed_for_coda(b"nk", 5, false)); // nặng
 }
 
 #[test]
