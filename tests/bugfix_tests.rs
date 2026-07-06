@@ -191,3 +191,170 @@ fn repro_ghost_character_log() {
         );
     }
 }
+
+// ========== UPPERCASE ƯƠ BUG FIX TESTS ==========
+// Bug: typing NGUOWCJ produced "NGỰOC" instead of "NGƯỢC".
+// Root cause: in try_apply_w_non_cancel, the "uo"→"ươ" promotion checked
+// `prev.flags == 0`, which failed when the 'u' carried F_CAPS (uppercase).
+
+#[test]
+fn test_uppercase_uo_horn_promotion() {
+    // NGUOWCJ → NGƯỢC (ngược in uppercase)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "NGUOWCJ"),
+        "NGƯỢC",
+        "NGUOWCJ should produce NGƯỢC"
+    );
+}
+
+#[test]
+fn test_lowercase_uo_horn_promotion_still_works() {
+    // nguowcj → ngược (regression guard for the lowercase path)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "nguowcj"),
+        "ngược",
+        "nguowcj should produce ngược"
+    );
+}
+
+#[test]
+fn test_mixed_case_uo_horn_promotion() {
+    // Mixed case: nguOwcj → ngƯợc? The horn promotion should still fire
+    // because F_CAPS on the 'u' no longer blocks it.
+    let mut e = UltraFastViEngine::new();
+    let result = type_seq(&mut e, "nguOwcj");
+    assert!(
+        result.contains('Ư') || result.contains('ư'),
+        "nguOwcj should still apply horn to u, got {}",
+        result
+    );
+}
+
+// ========== REVERSE TYPING ORDER: uw + o → ươ ==========
+// Bug: typing "nguwocs" produced "ngứoc" instead of "ngước".
+// Root cause: after "uw" produces "ư", typing 'o' did not auto-promote to
+// 'ơ' to form the "ươ" diphthong. The engine only handled the "uo" + w
+// order, not the "uw" + o order.
+
+#[test]
+fn test_uw_then_o_forms_uo_horn() {
+    // nguwocs → ngước (sắc tone on ơ)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "nguwocs"),
+        "ngước",
+        "nguwocs should produce ngước"
+    );
+}
+
+#[test]
+fn test_uw_then_o_with_nang_tone() {
+    // nguwocj → ngược (nặng tone on ơ)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "nguwocj"),
+        "ngược",
+        "nguwocj should produce ngược"
+    );
+}
+
+#[test]
+fn test_uw_then_o_no_tone() {
+    // nguwoc → ngươc (no tone, just horn diphthong + coda)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "nguwoc"),
+        "ngươc",
+        "nguwoc should produce ngươc"
+    );
+}
+
+#[test]
+fn test_uw_then_o_open_syllable() {
+    // nguwo → ngươ (open syllable, no coda)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "nguwo"),
+        "ngươ",
+        "nguwo should produce ngươ"
+    );
+}
+
+#[test]
+fn test_uw_then_o_uppercase() {
+    // NGUWOCS → NGƯỚC (uppercase, both fixes combined)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "NGUWOCS"),
+        "NGƯỚC",
+        "NGUWOCS should produce NGƯỚC"
+    );
+}
+
+#[test]
+fn test_uw_then_o_with_huyen_tone() {
+    // nguwongf → ngường (huyền tone on ơ, ng coda allows all tones)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "nguwongf"),
+        "ngường",
+        "nguwongf should produce ngường"
+    );
+}
+
+#[test]
+fn test_uw_then_o_with_hoi_tone() {
+    // nguwongr → ngưởng (hỏi tone on ơ, ng coda allows all tones)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "nguwongr"),
+        "ngưởng",
+        "nguwongr should produce ngưởng"
+    );
+}
+
+#[test]
+fn test_uw_then_o_with_nga_tone() {
+    // nguwongx → ngưỡng (ngã tone on ơ, ng coda allows all tones)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "nguwongx"),
+        "ngưỡng",
+        "nguwongx should produce ngưỡng"
+    );
+}
+
+#[test]
+fn test_uwo_then_ng_coda() {
+    // nguwong → ngương (ươ + ng coda, sắc tone)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "nguwongs"),
+        "ngướng",
+        "nguwongs should produce ngướng"
+    );
+}
+
+#[test]
+fn test_uw_then_o_uoi_triphthong() {
+    // nguwois → ngưới (ươi triphthong with sắc tone)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "nguwois"),
+        "ngưới",
+        "nguwois should produce ngưới"
+    );
+}
+
+#[test]
+fn test_uw_then_o_uou_triphthong() {
+    // nguwous → ngướu (ươu triphthong with sắc tone)
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(
+        type_seq(&mut e, "nguwous"),
+        "ngướu",
+        "nguwous should produce ngướu"
+    );
+}

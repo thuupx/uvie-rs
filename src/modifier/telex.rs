@@ -191,7 +191,15 @@ impl TelexModifier for UltraFastViEngine {
                 self.buf.set(idx, updated);
                 if idx > 0 && idx > nucleus_start {
                     let prev = self.buf.get(idx - 1);
-                    if prev.base == b'u' && prev.flags == 0 && !self.is_u_glide(idx - 1) {
+                    // Promote a preceding plain 'u' to 'ư' when 'o' receives a
+                    // horn, forming the "ươ" diphthong (e.g. "nguow" → "ngươ").
+                    // Only check that no horn/circumflex is already set; F_CAPS
+                    // (uppercase) must NOT block the promotion, otherwise
+                    // "NGUOWCJ" produces "NGỰOC" instead of "NGƯỢC".
+                    if prev.base == b'u'
+                        && prev.flags & (F_HORN | F_CIRCUMFLEX) == 0
+                        && !self.is_u_glide(idx - 1)
+                    {
                         let promoted = prev.clone().with_horn();
                         self.buf.set(idx - 1, promoted);
                     }

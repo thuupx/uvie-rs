@@ -3,7 +3,7 @@
 use crate::engine::UltraFastViEngine;
 use crate::modes::{IS_MODIFIER, IS_TONE_KEY, IS_VOWEL};
 use crate::modifier::{DoubleVowelLookup, ModifierHandler};
-use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_LITERAL, F_TONE_SET, Syl};
+use crate::syllable::{F_CAPS, F_CIRCUMFLEX, F_HORN, F_LITERAL, F_TONE_SET, Syl};
 use crate::tone_handler::ToneHandler;
 use crate::validation::SyllableValidator;
 
@@ -144,6 +144,23 @@ impl Composable for UltraFastViEngine {
                     self.apply_mid_nucleus_tone(b);
                     return;
                 }
+            }
+        }
+
+        // Auto-promote: typing 'o' right after 'ư' (u with horn) should form
+        // the "ươ" diphthong, mirroring the "uo" + w → "ươ" shortcut but for
+        // the reverse typing order (uw first, then o). Without this,
+        // "nguwocs" produces "ngứoc" instead of "ngước".
+        if b == b'o' && self.buf.len() > 0 {
+            let prev = self.buf.get(self.buf.len() - 1);
+            if prev.base == b'u'
+                && prev.flags & F_HORN != 0
+                && prev.flags & F_CIRCUMFLEX == 0
+            {
+                let promoted = Syl::literal(b'o', caps).with_horn();
+                self.buf.push(promoted);
+                self.reapply_tone_after_nucleus_change();
+                return;
             }
         }
 
