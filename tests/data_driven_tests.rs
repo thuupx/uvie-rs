@@ -109,6 +109,219 @@ fn telex_pairs_coverage() {
     );
 }
 
+/// Decompose a pre-composed Vietnamese character into its Telex keystroke
+/// representation. Returns `(base_keys, tone_key)` where `tone_key` is `""`
+/// when the character carries no tone mark. Returns `None` for characters
+/// that pass through as-is (ASCII consonants, digits, etc.).
+fn decompose_vietnamese(c: char) -> Option<(&'static str, &'static str)> {
+    Some(match c {
+        // Base modified letters (no tone)
+        'â' => ("aa", ""),
+        'ă' => ("aw", ""),
+        'ê' => ("ee", ""),
+        'ô' => ("oo", ""),
+        'ơ' => ("ow", ""),
+        'ư' => ("uw", ""),
+        'đ' => ("dd", ""),
+        'Đ' => ("dd", ""),
+
+        // a + tone
+        'á' => ("a", "s"),
+        'à' => ("a", "f"),
+        'ả' => ("a", "r"),
+        'ã' => ("a", "x"),
+        'ạ' => ("a", "j"),
+
+        // â + tone
+        'ấ' => ("aa", "s"),
+        'ầ' => ("aa", "f"),
+        'ẩ' => ("aa", "r"),
+        'ẫ' => ("aa", "x"),
+        'ậ' => ("aa", "j"),
+
+        // ă + tone
+        'ắ' => ("aw", "s"),
+        'ằ' => ("aw", "f"),
+        'ẳ' => ("aw", "r"),
+        'ẵ' => ("aw", "x"),
+        'ặ' => ("aw", "j"),
+
+        // e + tone
+        'é' => ("e", "s"),
+        'è' => ("e", "f"),
+        'ẻ' => ("e", "r"),
+        'ẽ' => ("e", "x"),
+        'ẹ' => ("e", "j"),
+
+        // ê + tone
+        'ế' => ("ee", "s"),
+        'ề' => ("ee", "f"),
+        'ể' => ("ee", "r"),
+        'ễ' => ("ee", "x"),
+        'ệ' => ("ee", "j"),
+
+        // i + tone
+        'í' => ("i", "s"),
+        'ì' => ("i", "f"),
+        'ỉ' => ("i", "r"),
+        'ĩ' => ("i", "x"),
+        'ị' => ("i", "j"),
+
+        // o + tone
+        'ó' => ("o", "s"),
+        'ò' => ("o", "f"),
+        'ỏ' => ("o", "r"),
+        'õ' => ("o", "x"),
+        'ọ' => ("o", "j"),
+
+        // ô + tone
+        'ố' => ("oo", "s"),
+        'ồ' => ("oo", "f"),
+        'ổ' => ("oo", "r"),
+        'ỗ' => ("oo", "x"),
+        'ộ' => ("oo", "j"),
+
+        // ơ + tone
+        'ớ' => ("ow", "s"),
+        'ờ' => ("ow", "f"),
+        'ở' => ("ow", "r"),
+        'ỡ' => ("ow", "x"),
+        'ợ' => ("ow", "j"),
+
+        // u + tone
+        'ú' => ("u", "s"),
+        'ù' => ("u", "f"),
+        'ủ' => ("u", "r"),
+        'ũ' => ("u", "x"),
+        'ụ' => ("u", "j"),
+
+        // ư + tone
+        'ứ' => ("uw", "s"),
+        'ừ' => ("uw", "f"),
+        'ử' => ("uw", "r"),
+        'ữ' => ("uw", "x"),
+        'ự' => ("uw", "j"),
+
+        // y + tone
+        'ý' => ("y", "s"),
+        'ỳ' => ("y", "f"),
+        'ỷ' => ("y", "r"),
+        'ỹ' => ("y", "x"),
+        'ỵ' => ("y", "j"),
+
+        _ => return None,
+    })
+}
+
+/// Convert a Vietnamese word or phrase into Telex keystrokes.
+///
+/// Each syllable is converted independently: every pre-composed Vietnamese
+/// character is decomposed into its base keystrokes, and the tone key (if
+/// any) is appended at the end of the syllable. Uppercase is preserved by
+/// capitalizing the first letter of the decomposed base.
+fn vietnamese_to_telex(text: &str) -> String {
+    let mut result = String::new();
+    for (i, syllable) in text.split_whitespace().enumerate() {
+        if i > 0 {
+            result.push(' ');
+        }
+        let mut tone_key = "";
+        for c in syllable.chars() {
+            match decompose_vietnamese(c) {
+                Some((base, tone)) => {
+                    if c.is_uppercase() {
+                        // Capitalize the first letter of the base keystrokes.
+                        let mut chars = base.chars();
+                        if let Some(first) = chars.next() {
+                            for u in first.to_uppercase() {
+                                result.push(u);
+                            }
+                            result.push_str(chars.as_str());
+                        }
+                    } else {
+                        result.push_str(base);
+                    }
+                    if !tone.is_empty() {
+                        tone_key = tone;
+                    }
+                }
+                None => result.push(c),
+            }
+        }
+        result.push_str(tone_key);
+    }
+    result
+}
+
+#[test]
+fn vietnamese_22k_round_trip() {
+    let data = include_str!("data/vietnamese_22k.txt");
+    let mut passed = 0;
+    let mut failed = 0;
+    let mut failures: Vec<(&str, String, String)> = Vec::new();
+
+    for line in data.lines() {
+        let word = line.trim();
+        if word.is_empty() || word.starts_with('#') {
+            continue;
+        }
+
+        let telex = vietnamese_to_telex(word);
+
+        let mut e = UltraFastViEngine::new();
+        e.set_modern_orthography(false);
+        let typed = format!("{} ", telex);
+        let result = type_telex(&mut e, &typed);
+        let actual = result.trim();
+
+        if actual == word {
+            passed += 1;
+        } else {
+            failed += 1;
+            if failures.len() < 2000 {
+                failures.push((word, telex, actual.to_string()));
+            }
+        }
+    }
+
+    let total = passed + failed;
+    let pass_rate = if total > 0 {
+        (passed as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    eprintln!("\n=== Vietnamese 22k Round-Trip Test Results ===");
+    eprintln!("Total: {}", total);
+    eprintln!("Passed: {} ({:.2}%)", passed, pass_rate);
+    eprintln!("Failed: {}", failed);
+
+    if !failures.is_empty() {
+        eprintln!("\n=== First {} Failures ===", failures.len().min(50));
+        eprintln!("{:<20} {:<20} {:<20}", "EXPECTED", "TELEX", "ACTUAL");
+        for (word, telex, actual) in failures.iter().take(50) {
+            eprintln!("{:<20} {:<20} {:<20}", word, telex, actual);
+        }
+        if let Ok(mut f) = std::fs::File::create("tests/data/round_trip_failures.txt") {
+            use std::io::Write;
+            for (word, telex, actual) in &failures {
+                let _ = writeln!(f, "{}\t{}\t{}", word, telex, actual);
+            }
+        }
+    }
+
+    // CI threshold: round-trip should reconstruct the vast majority of words.
+    // Failures are typically due to ambiguous Telex encodings or rare edge
+    // cases in tone placement orthography.
+    const MIN_PASS_RATE: f64 = 95.0;
+    assert!(
+        pass_rate >= MIN_PASS_RATE,
+        "Round-trip pass rate {:.2}% is below threshold {:.1}%",
+        pass_rate,
+        MIN_PASS_RATE
+    );
+}
+
 #[test]
 fn english_100k_passthrough() {
     let data = include_str!("data/english_100k.txt");
