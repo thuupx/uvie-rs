@@ -66,6 +66,18 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
         tone_idx: 1,
     }, // uyu
     NucleusEntry {
+        seq: &['u', 'â', 'y'],
+        tone_idx: 1,
+    }, // uây (khuấy, nguẩy)
+    NucleusEntry {
+        seq: &['o', 'e', 'o'],
+        tone_idx: 1,
+    }, // oeo (khoèo, ngoèo)
+    NucleusEntry {
+        seq: &['u', 'ê', 'u'],
+        tone_idx: 1,
+    }, // uêu (khểu, nghễu)
+    NucleusEntry {
         seq: &['ư', 'ơ', 'i'],
         tone_idx: 1,
     }, // ươi

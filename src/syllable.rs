@@ -317,6 +317,19 @@ impl SylBuf {
         Some(self.entries[self.len])
     }
 
+    /// Remove the entry at index `idx`, shifting subsequent entries left.
+    #[inline]
+    pub fn remove(&mut self, idx: usize) {
+        if idx >= self.len {
+            return;
+        }
+        for i in idx..self.len - 1 {
+            self.entries[i] = self.entries[i + 1];
+        }
+        self.len -= 1;
+        self.version = self.version.wrapping_add(1);
+    }
+
     /// Clear all entries.
     #[inline]
     pub fn clear(&mut self) {

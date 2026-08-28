@@ -270,8 +270,8 @@ impl ToneHandler for UltraFastViEngine {
         }
 
         let n = self.buf.len();
-        if n < 4 {
-            return; // Need at least onset + 2 vowels + coda.
+        if n < 3 {
+            return; // Need at least 2 vowels + coda (onset is optional).
         }
 
         let (_, nucleus_start, nucleus_end, coda_start) = self.partition_syllable();
@@ -288,7 +288,10 @@ impl ToneHandler for UltraFastViEngine {
         }
         let nuc0 = self.buf.get(nucleus_start).base_no_tone();
         let nuc1 = self.buf.get(nucleus_start + 1).base_no_tone();
-        let is_traditional_diphthong = matches!((nuc0, nuc1), ('o', 'a') | ('o', 'e') | ('u', 'y'));
+        let is_traditional_diphthong = matches!(
+            (nuc0, nuc1),
+            ('o', 'a') | ('o', 'e') | ('u', 'y') | ('o', 'o')
+        );
         if !is_traditional_diphthong {
             return;
         }

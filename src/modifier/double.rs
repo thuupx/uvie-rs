@@ -24,16 +24,15 @@ impl DoubleVowelLookup for UltraFastViEngine {
                 // - â:            a + tone + a         (e.g. `aja` -> ậ)
                 // - ô:            o + tone + o         (e.g. `ojo` -> ộ)
                 if b == b'e' {
-                    // For ê, only allow bare (e + tone + e) or glide (i/y/u + e + tone + e).
-                    // Consonant onsets are NOT allowed because they conflict with
-                    // English words like "reset", "telex" where the consonant
-                    // between two e's is not a tone key.
-                    if self.raw_len >= 4 {
-                        let prev3 = self.raw[self.raw_len - 4];
-                        if prev3 != b'e' && !matches!(prev3, b'i' | b'y' | b'u') {
-                            return None;
-                        }
-                    }
+                    // For ê, allow any onset (bare, glide, or consonant).
+                    // Previously, consonant onsets were blocked to avoid conflicts
+                    // with English words like "reset". However, this also blocked
+                    // valid Vietnamese words like "befe" → "bề", "biense" → "biến".
+                    // The trade-off is that some English words with e+tone+e
+                    // patterns (e.g. "reset" → "rết") will be transformed, but
+                    // this affects far fewer cases than the Vietnamese words it
+                    // fixes. The final is_valid_vietnamese() check in
+                    // render_out_buf still catches most invalid cases.
                     // raw_len == 3: bare "e + tone + e" — allowed, fall through.
                 } else if b != b'a' && b != b'o' {
                     return None;
