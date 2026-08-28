@@ -96,6 +96,121 @@ impl UltraFastViEngine {
             self.buf.push(tone_syl);
         }
     }
+
+    /// After a double-vowel circumflex is applied (e.g. `ie + c + s + e` →
+    /// `iê + c + s`), a tone key that was pushed as a literal consonant
+    /// (because the nucleus was in an intermediate state like `ie` without
+    /// circumflex) may still be in the buffer. This function detects and
+    /// cleans up such literal tone keys by applying their tone to the carrier.
+    ///
+    /// This handles patterns like:
+    /// - `biecse` → `biếc` (b + i + ê + sắc + c)
+    /// - `chiejne` → `chiện` (ch + i + ê + nặng + n)
+    /// - `buoifo` → `buồi` (b + u + ô + huyền + i)
+    /// - `biefne` → `biền` (b + i + ê + huyền + n) — tone key is NOT last entry
+    /// - `diefue` → `điều` (đ + i + ê + huyền + u) — tone key between ê and u
+    ///
+    /// Searches from `target_idx + 1` to the end for a literal tone key.
+    /// Does NOT stop at vowels, since the tone key may be between the
+    /// circumflexed vowel and another nucleus vowel (e.g. `u` in `iêu`).
+    #[inline]
+    fn cleanup_literal_tone_after_circumflex(&mut self, b: u8, target_idx: usize) {
+        // Only relevant for double-vowel circumflex keys.
+        if !matches!(b, b'a' | b'e' | b'o') {
+            return;
+        }
+
+        // The last raw key must be the doubled vowel.
+        if self.raw_len == 0 || self.raw[self.raw_len - 1] != b {
+            return;
+        }
+
+        // Search from target_idx + 1 to the end for a literal tone key.
+        let n = self.buf.len();
+        let mut tone_idx: Option<usize> = None;
+        for i in (target_idx + 1)..n {
+            let syl = self.buf.get(i);
+            if syl.flags & F_TONE_SET == 0
+                && self.mode.classify[syl.base as usize] & IS_TONE_KEY != 0
+            {
+                tone_idx = Some(i);
+                break;
+            }
+        }
+
+        let Some(idx) = tone_idx else {
+            return;
+        };
+
+        let tone_base = self.buf.get(idx).base;
+        let tone_val = self.mode.tone[tone_base as usize];
+        if tone_val == 0 {
+            return; // Tone cancel key (z/0) — nothing to apply.
+        }
+
+        // Remove the tone key from the buffer by shifting subsequent entries.
+        self.buf.remove(idx);
+
+        if let Some(carrier) = self.tone_carrier_idx() {
+            let s = self.buf.get_mut(carrier);
+            s.tone = tone_val;
+            s.flags |= F_TONE_SET;
+            s.recompute_out();
+        }
+    }
+
+    /// Clean up literal tone keys stuck in the coda region of the buffer.
+    ///
+    /// When a modifier (like `w`) transforms an intermediate nucleus into a
+    /// valid one (e.g. `uoi` → `ươi`), tone keys that were previously pushed
+    /// as literal consonants (because the nucleus was invalid) are now stuck
+    /// in the coda. This function finds and removes them, applying their tone
+    /// to the tone carrier.
+    ///
+    /// Example: `buoirw` → after `w` makes `ươi`, the literal `r` (hỏi) in
+    /// the coda is removed and applied to `ơ` → `bưởi`.
+    ///
+    /// Returns `true` if a tone key was found and removed.
+    #[inline]
+    pub(crate) fn cleanup_coda_tone_keys(&mut self) -> bool {
+        let (_, _, _, coda_start) = self.partition_syllable();
+        let n = self.buf.len();
+        if coda_start >= n {
+            return false;
+        }
+
+        // Search the coda for a literal tone key.
+        let mut tone_idx: Option<usize> = None;
+        for i in coda_start..n {
+            let syl = self.buf.get(i);
+            if syl.flags & F_TONE_SET == 0
+                && self.mode.classify[syl.base as usize] & IS_TONE_KEY != 0
+            {
+                tone_idx = Some(i);
+                break;
+            }
+        }
+
+        let Some(idx) = tone_idx else {
+            return false;
+        };
+
+        let tone_base = self.buf.get(idx).base;
+        let tone_val = self.mode.tone[tone_base as usize];
+        if tone_val == 0 {
+            return false; // Tone cancel key — nothing to apply.
+        }
+
+        self.buf.remove(idx);
+
+        if let Some(carrier) = self.tone_carrier_idx() {
+            let s = self.buf.get_mut(carrier);
+            s.tone = tone_val;
+            s.flags |= F_TONE_SET;
+            s.recompute_out();
+        }
+        true
+    }
 }
 
 impl Composable for UltraFastViEngine {
@@ -138,11 +253,22 @@ impl Composable for UltraFastViEngine {
                         return;
                     }
                 } else {
+                    let snap = self.buf.get(target_idx).clone();
                     let updated = syl.with_circumflex();
                     self.buf.set(target_idx, updated);
                     self.reapply_tone_after_nucleus_change();
                     self.apply_mid_nucleus_tone(b);
-                    return;
+                    self.cleanup_literal_tone_after_circumflex(b, target_idx);
+                    // Check if the result is valid. If not, revert and push
+                    // the vowel as a literal (e.g. "khoafo" where pressing 'o'
+                    // after "khòa" would form invalid "ôà" — instead keep "oao").
+                    if self.is_valid_vietnamese() {
+                        return;
+                    }
+                    // Revert: undo circumflex and any tone changes.
+                    self.buf.set(target_idx, snap);
+                    self.reapply_tone_after_nucleus_change();
+                    // Fall through to push as literal.
                 }
             }
         }
@@ -194,13 +320,11 @@ impl Composable for UltraFastViEngine {
             return;
         }
 
-        let has_literal = (0..n).any(|i| self.buf.get(i).flags & F_LITERAL != 0);
-
-        if has_literal {
-            self.render_passthrough();
-            return;
-        }
-
+        // Check validity first. If the word is valid Vietnamese, render it
+        // normally even if some entries have F_LITERAL (e.g. after triple-
+        // cancel of circumflex, the user may continue typing to form a valid
+        // word like "booongs" → "boóng"). F_LITERAL only prevents further
+        // modifier transforms, not rendering.
         if !self.is_valid_vietnamese() {
             self.render_passthrough();
             return;

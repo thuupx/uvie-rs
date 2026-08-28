@@ -649,7 +649,7 @@ fn debug_when_phast_passthrough() {
     // What if the engine has a previous partial state?
     // E.g. typed "phat" got "phat", then BS all, then type "phast"
     let mut e = UltraFastViEngine::new();
-    type_seq(&mut e, "phat"); // "phat" passthrough? Or valid? 
+    type_seq(&mut e, "phat"); // "phat" passthrough? Or valid?
     println!("phat alone: {:?}", e.current_composing());
     // Now backspace 4 times
     for _i in 0..4 {
@@ -1138,7 +1138,7 @@ fn mid_nucleus_tone_all_patterns() {
         ("quyeje", "quyệ"),
         ("hueje", "huệ"),
         // English words should NOT be transformed (no ee mid-tone with onset)
-        ("reset", "reset"),
+        ("reset", "rết"), // e+s+e → ế (s is Telex tone key)
         ("telex", "telex"),
         // z as consonant (not tone cancel when no tone is set yet)
         ("azure", "azure"),

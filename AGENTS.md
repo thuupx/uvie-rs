@@ -4,7 +4,7 @@
 
 ```bash
 rtk cargo build --release          # Build release
-rtk cargo test --release           # Run all tests (231 tests)
+rtk cargo test --release           # Run all tests (233 tests)
 rtk cargo bench --bench perf -- --warm-up-time 1 --measurement-time 3  # Benchmarks
 ```
 
@@ -45,6 +45,30 @@ Was calling `.chars().count()` twice. Fixed with single-pass counting.
 | diff_sentences/long | 10.2 µs | 7.18 µs | 6.41 µs | 5.99 µs | **-41%** |
 | diff_backspace/medium | 4.70 µs | 3.13 µs | 2.62 µs | 2.41 µs | **-49%** |
 | diff_backspace/long | 4.54 µs | 3.11 µs | 2.63 µs | 2.41 µs | **-47%** |
+
+### Accuracy Improvement (2025-01)
+Data-driven testing with 30k Vietnamese Telex pairs:
+- **Before**: 89.42% pass rate (3211 failures)
+- **After**: 99.98% pass rate (6 failures — rare edge cases like `huow`→`huơ`)
+
+Key fixes:
+- Allow `e+tone+e` after consonant onsets (`befe`→`bề`, `biecse`→`biếc`)
+- `cleanup_literal_tone_after_circumflex`: remove tone keys stuck in coda
+  after circumflex is applied to an intermediate nucleus
+- `cleanup_coda_tone_keys`: remove tone keys stuck in coda after `w` modifier
+  transforms an intermediate nucleus into a valid one
+- Silent `w` consume when all candidates have horn (`chuwongw`) or no valid
+  candidate exists (`buwouw`)
+- Circumflex validity check in `handle_vowel`: revert if result is invalid
+  (`khoafo`→`khoào` instead of passthrough)
+- Added missing triphthongs: `uây`, `oeo`, `uêu`
+- `apply_coda_tone_rule`: added `oo` diphthong, fixed `n>=3` check
+- `F_LITERAL` passthrough: check `is_valid_vietnamese()` before `F_LITERAL`
+  (fixes `booongs`→`boóng` after triple-cancel)
+
+Trade-off: ~40% regression on short benchmarks (~130ns/keystroke) due to
+added `is_valid_vietnamese()` checks. Sentence/backspace benchmarks
+remain faster than original baseline.
 
 ### Round 1: Eliminate heap allocations
 - `diff_into`: single-pass char counting (was double `.chars().count()`)

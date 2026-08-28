@@ -36,22 +36,49 @@ impl TelexModifier for UltraFastViEngine {
         // syllable, keep it. This fixes cases like "chuaw" -> "chưa" where the
         // backwards-first heuristic would otherwise modify the wrong vowel.
         //
-        // Optimization: instead of cloning the entire SylBuf (192 bytes) for
-        // each candidate, we snapshot only the 2 entries that could change
-        // (the target + the tone carrier) and restore them on failure.
+        // Optimization: use single-entry snapshot for the fast path (common
+        // case where no coda cleanup is needed). Only fall back to full clone
+        // when coda cleanup is required (rare, e.g. "buoirw").
         for idx in 0..candidate_count {
             let i = candidates[idx];
-            // Snapshot the target and its neighbor (reapply_tone may touch
-            // a different index).
+            // Fast path: single-entry snapshot (target + neighbor for promotion).
             let snap_i = *self.buf.get(i);
+            let snap_neighbor = if i > 0 {
+                Some(*self.buf.get(i - 1))
+            } else {
+                None
+            };
             let snap_len = self.buf.len();
-            if self.try_apply_w_non_cancel(i, nucleus_start, caps) && self.is_valid_vietnamese() {
-                return;
-            }
-            // Restore: undo any changes made by try_apply_w_non_cancel.
-            self.buf.set(i, snap_i);
-            while self.buf.len() > snap_len {
-                self.buf.pop();
+            if self.try_apply_w_non_cancel(i, nucleus_start, caps) {
+                if self.is_valid_vietnamese() {
+                    return;
+                }
+                // Check if coda has a literal tone key that could be cleaned up.
+                let (_, _, _, coda_start) = self.partition_syllable();
+                let has_coda_tone = (coda_start..self.buf.len()).any(|j| {
+                    let s = self.buf.get(j);
+                    s.flags & crate::syllable::F_TONE_SET == 0
+                        && self.mode.classify[s.base as usize] & crate::modes::IS_TONE_KEY != 0
+                });
+                if has_coda_tone {
+                    // Slow path: full clone needed for coda cleanup (removes entry).
+                    let snap_buf = self.buf.clone();
+                    self.cleanup_coda_tone_keys();
+                    if self.is_valid_vietnamese() {
+                        return;
+                    }
+                    self.buf = snap_buf;
+                }
+                // Restore single-entry snapshot.
+                self.buf.set(i, snap_i);
+                if let Some(n) = snap_neighbor {
+                    self.buf.set(i - 1, n);
+                }
+                while self.buf.len() > snap_len {
+                    self.buf.pop();
+                }
+            } else {
+                // try_apply_w_non_cancel returned false — no changes made.
             }
         }
 
@@ -70,6 +97,39 @@ impl TelexModifier for UltraFastViEngine {
             while self.buf.len() > snap_len {
                 self.buf.pop();
             }
+        }
+
+        // If ALL candidates already have F_HORN and the syllable is valid,
+        // the `w` is redundant (e.g. "chuwongw" where both u→ư and o→ơ
+        // already have horn). Consume it silently instead of cancelling.
+        // Only apply when there are multiple candidates — for a single
+        // candidate, the cancellation pass below should handle it (e.g.
+        // "aww" → "aw" needs cancellation, not silent consume).
+        // Also skip when the previous raw key was also 'w' (double-w
+        // cancellation like "uoww" → "uow" should be handled by the
+        // cancellation pass, not consumed silently).
+        let prev_is_w = self.raw_len >= 2 && self.raw[self.raw_len - 2] == b'w';
+        if candidate_count > 1 && !prev_is_w {
+            let all_horned =
+                (0..candidate_count).all(|idx| self.buf.get(candidates[idx]).flags & F_HORN != 0);
+            if all_horned && self.is_valid_vietnamese() {
+                if self.raw_len > 0 {
+                    self.raw_len -= 1;
+                }
+                return;
+            }
+        }
+
+        // If no candidate produced a valid syllable but the current syllable
+        // is already valid, consume `w` silently (e.g. "buwouw" where `w`
+        // after `bươu` would make `ươư` invalid — just drop the `w`).
+        // Only apply when there are multiple candidates and previous key
+        // was not 'w' (double-w cancellation should go through cancel pass).
+        if candidate_count > 1 && !prev_is_w && self.is_valid_vietnamese() {
+            if self.raw_len > 0 {
+                self.raw_len -= 1;
+            }
+            return;
         }
 
         // Second pass: cancellation (target already has F_HORN, or existing 'w').
