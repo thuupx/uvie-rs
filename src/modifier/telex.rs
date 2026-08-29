@@ -99,6 +99,16 @@ impl TelexModifier for UltraFastViEngine {
             }
         }
 
+        // ---- Simple Telex mode: vneHookAll ----
+        // In Simple Telex, `w` only applies horn/breve to vowel candidates.
+        // No standalone `w→ư`, no double-w cancel, no silent consume.
+        // If no candidate worked, push `w` as a literal consonant.
+        if self.is_simple_telex {
+            self.buf.push(Syl::literal(b'w', caps));
+            return;
+        }
+
+        // ---- Regular Telex: cancellation, silent consume, standalone ư ----
         // If ALL candidates already have F_HORN and the syllable is valid,
         // the `w` is redundant (e.g. "chuwongw" where both u→ư and o→ơ
         // already have horn). Consume it silently instead of cancelling.

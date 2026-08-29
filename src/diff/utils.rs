@@ -110,7 +110,11 @@ impl UltraFastViEngine {
     /// Sets both `mode` AND `input_method` on the scratch engine so that
     /// `decompose_vietnamese_char` (which uses `input_method`) works correctly
     /// for VNI precomposed input.
-    pub(crate) fn rerender_chars(raw: &[char], mode: &'static Mode) -> OutBuffer {
+    pub(crate) fn rerender_chars(
+        raw: &[char],
+        mode: &'static Mode,
+        is_simple_telex: bool,
+    ) -> OutBuffer {
         #[cfg(feature = "std")]
         {
             thread_local! {
@@ -127,6 +131,7 @@ impl UltraFastViEngine {
                     crate::modes::ResolverKind::Telex => InputMethod::Telex,
                     crate::modes::ResolverKind::Vni => InputMethod::Vni,
                 };
+                eng.is_simple_telex = is_simple_telex;
                 for &c in raw {
                     eng.feed(c);
                 }
@@ -141,6 +146,7 @@ impl UltraFastViEngine {
                 crate::modes::ResolverKind::Telex => InputMethod::Telex,
                 crate::modes::ResolverKind::Vni => InputMethod::Vni,
             };
+            eng.is_simple_telex = is_simple_telex;
             for &c in raw {
                 eng.feed(c);
             }

@@ -6,6 +6,7 @@ pub const IS_TONE_KEY: u8 = 1 << 2;
 pub enum InputMethod {
     Telex,
     Vni,
+    SimpleTelex,
 }
 
 pub enum ResolverKind {
@@ -25,6 +26,7 @@ pub fn mode_for(method: InputMethod) -> &'static Mode {
     match method {
         InputMethod::Telex => &TELEX_MODE,
         InputMethod::Vni => &VNI_MODE,
+        InputMethod::SimpleTelex => &SIMPLE_TELEX_MODE,
     }
 }
 
@@ -42,6 +44,18 @@ const VNI_MODE: Mode = Mode {
     w_target: &W_TARGET_VNI,
     resolver: ResolverKind::Vni,
     enable_w_bubbling: false,
+};
+
+/// Simple Telex mode: same tone keys and circumflex (aa/ee/oo/dd) as Telex,
+/// but `w` is `vneHookAll` — it always applies horn/breve to ALL vowel
+/// candidates, with no standalone `w→ư`, no double-w cancel, and no w-as-ư
+/// at onset. This matches UniKey/macOS "Simple Telex" behavior.
+const SIMPLE_TELEX_MODE: Mode = Mode {
+    classify: &CLASSIFY_TELEX, // Same classification as Telex
+    tone: &TONE_TELEX,         // Same tone keys as Telex
+    w_target: &W_TARGET_TELEX, // Same w-target vowels (u, o, a)
+    resolver: ResolverKind::Telex,
+    enable_w_bubbling: true, // Same bubbling as Telex
 };
 
 /// Static-dispatch trait for monomorphized resolver calls.

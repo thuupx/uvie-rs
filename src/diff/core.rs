@@ -149,7 +149,8 @@ impl UltraFastViEngine {
                 let new_syl_raw: CharVec<24> =
                     self.diff.raw_chars[split..].iter().copied().collect();
 
-                let committed_out = Self::rerender_chars(&committed_raw, self.mode);
+                let committed_out =
+                    Self::rerender_chars(&committed_raw, self.mode, self.is_simple_telex);
 
                 let _ = self.diff.diff_committed.push_str(&committed_out);
 
