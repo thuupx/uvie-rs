@@ -62,10 +62,7 @@ pub fn onset_nucleus_compatible(onset: &[u8], nucleus_first: char) -> bool {
             nucleus_first,
             'a' | 'ă' | 'â' | 'o' | 'ô' | 'ơ' | 'u' | 'ư' | 'i'
         ),
-        b"ng" => matches!(
-            nucleus_first,
-            'a' | 'ă' | 'â' | 'o' | 'ô' | 'ơ' | 'u' | 'ư'
-        ),
+        b"ng" => matches!(nucleus_first, 'a' | 'ă' | 'â' | 'o' | 'ô' | 'ơ' | 'u' | 'ư'),
         // length-1 `q` with a real nucleus: `q` wasn't followed by `u`.
         b"q" => false,
         _ => true,

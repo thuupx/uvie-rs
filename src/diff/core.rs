@@ -38,8 +38,7 @@ impl UltraFastViEngine {
                 self.diff.clear();
 
                 // Diff from full_screen → target.
-                let (bs, _) =
-                    Self::diff_into(&full_screen, &target, &mut self.diff.diff_suffix);
+                let (bs, _) = Self::diff_into(&full_screen, &target, &mut self.diff.diff_suffix);
                 return (bs, &self.diff.diff_suffix);
             }
 

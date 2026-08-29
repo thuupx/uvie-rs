@@ -2129,7 +2129,9 @@ mod tests {
 
     #[test]
     fn test_lookup() {
-        assert!(is_english_override(&['c', 'h', 'a', 'r', 'a', 'c', 't', 'e', 'r']));
+        assert!(is_english_override(&[
+            'c', 'h', 'a', 'r', 'a', 'c', 't', 'e', 'r'
+        ]));
         assert!(is_english_override(&['s', 'a', 'f', 'a', 'r', 'i']));
         assert!(is_english_override(&['S', 'A', 'F', 'A', 'R', 'I'])); // case-insensitive
         assert!(is_english_override(&['e', 'f', 'f', 'e', 'c', 't']));

@@ -78,9 +78,7 @@ impl Diffable for UltraFastViEngine {
         // maintained in parallel — if the user continues typing past the
         // dictionary word (e.g. "characters"), the override stops firing
         // and the Vietnamese transform is shown again.
-        if dict_eligible
-            && crate::tables::is_english_override(&self.diff.word_raw)
-        {
+        if dict_eligible && crate::tables::is_english_override(&self.diff.word_raw) {
             let committed_before = committed_before.unwrap();
             let prev_before = prev_before.unwrap();
             // Build full on-screen text BEFORE this keystroke (the baseline
@@ -97,8 +95,7 @@ impl Diffable for UltraFastViEngine {
             }
 
             // Recompute diff from full_before → raw word.
-            let (bs2, _) =
-                Self::diff_into(&full_before, &target, &mut self.diff.diff_suffix);
+            let (bs2, _) = Self::diff_into(&full_before, &target, &mut self.diff.diff_suffix);
 
             // Commit the English word to diff_committed and clear composing
             // state. This is CRITICAL: if we leave raw_chars/buf intact, the
@@ -167,7 +164,9 @@ impl Diffable for UltraFastViEngine {
             // now preserve original case). Both are ASCII (is_ascii check).
             let prev_bytes = self.diff.prev_rendered.as_bytes();
             let matches = prev_bytes.len() == self.diff.word_raw.len()
-                && prev_bytes.iter().zip(self.diff.word_raw.iter())
+                && prev_bytes
+                    .iter()
+                    .zip(self.diff.word_raw.iter())
                     .all(|(b, c)| *b == *c as u8);
             if matches {
                 self.diff.prev_rendered.pop();
@@ -240,8 +239,7 @@ impl Diffable for UltraFastViEngine {
         // English word, replace the Vietnamese transform with the raw English
         // word. The diff engine computes the backspaces needed to transform
         // what's on screen (diff_committed + prev_rendered) into the raw word.
-        if !self.diff.word_raw.is_empty()
-            && crate::tables::is_english_override(&self.diff.word_raw)
+        if !self.diff.word_raw.is_empty() && crate::tables::is_english_override(&self.diff.word_raw)
         {
             // Build full on-screen text (Vietnamese) in a stack buffer.
             let mut full_screen = crate::buffers::new_out_buffer();

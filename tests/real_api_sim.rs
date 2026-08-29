@@ -345,7 +345,9 @@ fn real_type_good_then_continue_no_ghost() {
     let mut s = String::new();
     // Type char by char and verify no ghost characters at any point
     let chars: Vec<char> = "goodness".chars().collect();
-    let expected = ["g", "go", "gô", "good", "goodn", "goodne", "goodné", "goodness"];
+    let expected = [
+        "g", "go", "gô", "good", "goodn", "goodne", "goodné", "goodness",
+    ];
     for (i, ch) in chars.iter().enumerate() {
         let (bs, suffix) = e.feed_diff(*ch);
         apply(&mut s, bs, suffix);
@@ -436,5 +438,8 @@ fn real_type_good_backspace_retype_dict_match() {
     assert_eq!(s, "go");
     // Retype "od" — "good" should match dict again
     type_chars(&mut e, &mut s, "od");
-    assert_eq!(s, "good", "after retype 'od': should be 'good' (dict match)");
+    assert_eq!(
+        s, "good",
+        "after retype 'od': should be 'good' (dict match)"
+    );
 }
