@@ -300,19 +300,41 @@ fn test_vcv_boundary_auto_commit() {
             "after 'blob': committed should be empty"
         );
 
+        // "banana" is now in the English dictionary and passes through.
+        // Use "banana" without the dictionary to test V-C-V split.
+        // "kamana" is not English and not in the dictionary — it triggers
+        // V-C-V split: "kam" (not valid VN) → raw, then "ana" V-C-V.
+        // Actually, use "banana" with a prefix that prevents dict match:
+        // "zbanana" won't match the dictionary, so V-C-V split fires.
         let mut e2 = UltraFastViEngine::new();
-        for ch in "banana".chars() {
+        for ch in "zbanana".chars() {
+            e2.feed_diff(ch);
+        }
+        // zbanana: z is not a valid VN onset, so "zba" is raw passthrough
+        // until V-C-V split at "na". Actually, let's just use a simpler
+        // V-C-V word that's not in the dictionary.
+        // "manama" → V-C-V split: "ma" (committed) + "nama" (composing)
+        let mut e2 = UltraFastViEngine::new();
+        for ch in "manama".chars() {
+            e2.feed_diff(ch);
+        }
+        // manama: V-C-V at 'a' after 'm' → "ma" committed + "nama" composing
+        // But "ma" is valid VN, and "nama" may or may not split further.
+        // Let's just use the original "banana" test but accept that it's
+        // now in the dictionary. Use "banano" instead (not in dict).
+        let mut e2 = UltraFastViEngine::new();
+        for ch in "banano".chars() {
             e2.feed_diff(ch);
         }
         assert_eq!(
             e2.current_composing_diff(),
-            "na",
-            "after 'banana': composing should be 'na'"
+            "no",
+            "after 'banano': composing should be 'no'"
         );
         assert_eq!(
             e2.committed_text_diff(),
             "bân",
-            "after 'banana': committed should be 'bân'"
+            "after 'banano': committed should be 'bân'"
         );
     }
 

@@ -9,7 +9,8 @@ use crate::syllable::{
     F_CAPS, F_CIRCUMFLEX, F_HORN, F_LITERAL, F_TONE_SET, NucleusKind, OnsetKind, Syl, SylStructure,
 };
 use crate::tables::{
-    is_legal_coda, is_legal_nucleus, is_legal_onset, nucleus_allows_coda, tone_allowed_for_coda,
+    is_legal_coda, is_legal_nucleus, is_legal_onset, nucleus_allows_coda, onset_nucleus_compatible,
+    tone_allowed_for_coda,
 };
 
 /// Syllable validation and structural analysis.
@@ -69,6 +70,12 @@ impl SyllableValidator for UltraFastViEngine {
         }
 
         if !is_legal_onset(onset_raw) {
+            return false;
+        }
+        // Onset↔nucleus distribution (c/k/q and g/gh/ng/ngh). Without this,
+        // invalid combos like "gh"+"o" pass and a later tone key produces
+        // invalid Vietnamese such as "ghost" → "ghót" instead of passthrough.
+        if !onset_nucleus_compatible(onset_raw, nuc[0]) {
             return false;
         }
         if !is_legal_nucleus(nuc_slice) {

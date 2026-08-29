@@ -25,6 +25,53 @@ pub(crate) static LEGAL_ONSETS: &[&[u8]] = &[
     b"w", b"z", b"j",
 ];
 
+/// Onset↔nucleus compatibility.
+///
+/// Vietnamese has a hard orthographic distribution for the palatal/velar
+/// consonant series — `c`/`k`/`q` and `g`/`gh`/`ng`/`ngh` are complementary:
+///
+/// | onset | allowed nucleus-first vowels (resolved)        |
+/// |-------|-----------------------------------------------|
+/// | `gh`  | `i`, `e`, `ê`                                 |
+/// | `ngh` | `i`, `e`, `ê`                                 |
+/// | `k`   | `i`, `e`, `ê`, `y`                            |
+/// | `c`   | `a`, `ă`, `â`, `o`, `ô`, `ơ`, `u`, `ư`        |
+/// | `g`   | `a`, `ă`, `â`, `o`, `ô`, `ơ`, `u`, `ư`, `i`¹  |
+/// | `ng`  | `a`, `ă`, `â`, `o`, `ô`, `ơ`, `u`, `ư`        |
+/// | `q`   | never valid alone (must form `qu` glide)²     |
+///
+/// ¹ `g` + `i` is the standalone `gi` syllable family (`gì`, `gíp`, `gịt`)
+///   — the `gi` digraph onset is only split off by `partition_syllable` when
+///   a vowel follows, so `g` with nucleus `i` here is exactly the bare `gi`.
+/// ² When `q` is followed by `u`, `partition_syllable` extends the onset to
+///   `qu`, so a length-1 `q` onset with a real nucleus means `q` was not
+///   followed by `u` — always invalid.
+///
+/// `nucleus_first` is the **resolved** first nucleus vowel (e.g. `'ê'` for
+/// `ế`, `'ơ'` for `ớ`), as returned by `Syl::base_no_tone()`.
+///
+/// All other onsets (`ch`, `tr`, `th`, `ph`, `kh`, `nh`, `b`, `d`, `đ`, `h`,
+/// `l`, `m`, `n`, `p`, `r`, `s`, `t`, `v`, `x`, `qu`, `gi`, …) combine with
+/// every legal nucleus, so this returns `true` for them.
+pub fn onset_nucleus_compatible(onset: &[u8], nucleus_first: char) -> bool {
+    match onset {
+        b"gh" | b"ngh" => matches!(nucleus_first, 'i' | 'e' | 'ê'),
+        b"k" => matches!(nucleus_first, 'i' | 'e' | 'ê' | 'y'),
+        b"c" => !matches!(nucleus_first, 'i' | 'e' | 'ê' | 'y'),
+        b"g" => matches!(
+            nucleus_first,
+            'a' | 'ă' | 'â' | 'o' | 'ô' | 'ơ' | 'u' | 'ư' | 'i'
+        ),
+        b"ng" => matches!(
+            nucleus_first,
+            'a' | 'ă' | 'â' | 'o' | 'ô' | 'ơ' | 'u' | 'ư'
+        ),
+        // length-1 `q` with a real nucleus: `q` wasn't followed by `u`.
+        b"q" => false,
+        _ => true,
+    }
+}
+
 /// Returns `true` if `onset` (slice of raw base bytes before the nucleus) is
 /// a legal Vietnamese initial cluster.  The empty onset is always legal.
 pub fn is_legal_onset(onset: &[u8]) -> bool {

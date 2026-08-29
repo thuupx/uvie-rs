@@ -52,6 +52,125 @@ fn edge_english_words_passthrough() {
 }
 
 #[test]
+fn edge_english_onset_nucleus_distribution() {
+    // English words whose onset+nucleus combo is invalid in Vietnamese must
+    // pass through. Previously the engine accepted e.g. "gh"+"o" as valid and
+    // applied the tone key inside the word, producing invalid Vietnamese.
+    // Root cause: is_valid_vietnamese checked onset, nucleus, and coda in
+    // isolation but not the c/k/q and g/gh/ng/ngh distribution.
+
+    // "ghost": 's' is the sắc tone; "gh"+"o" is invalid → passthrough.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ghost"), "ghost");
+
+    // "ghots" → would be "ghót" without the distribution check.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ghots"), "ghots");
+
+    // 'k' before back vowels is invalid (should be 'c').
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "kos"), "kos");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "kus"), "kus");
+
+    // 'c' before front vowels is invalid (should be 'k').
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ces"), "ces");
+
+    // 'q' without 'u' glide is invalid.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "qas"), "qas");
+
+    // Valid Vietnamese with the same onsets must still compose.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "ghes"), "ghé");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "kis"), "kí");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "cos"), "có");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "gas"), "gá");
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_seq(&mut e, "quas"), "quá");
+}
+
+#[test]
+fn edge_english_dictionary_override() {
+    // English words in the override dictionary should pass through verbatim,
+    // showing the raw English word WHILE typing (not just at word boundary),
+    // instead of producing garbled Vietnamese+English hybrids like "chẩcter"
+    // or "sầri".
+    //
+    // The per-keystroke override fires in feed_diff as soon as word_raw
+    // matches a dictionary word. The boundary override fires in
+    // feed_diff_core (space/punctuation) and commit_diff. Both use the
+    // lossless word_raw buffer that survives V-C-V splits and
+    // double-tone-cancel. The legacy feed()/commit() API uses a lossy raw
+    // buffer and is NOT covered by the dictionary override.
+
+    fn type_diff(e: &mut UltraFastViEngine, s: &str) -> String {
+        let mut screen = String::new();
+        for ch in s.chars() {
+            let (bs, suffix) = e.feed_diff(ch);
+            let suffix = suffix.to_string();
+            let sc: Vec<char> = screen.chars().collect();
+            screen = sc[..sc.len().saturating_sub(bs)].iter().collect::<String>();
+            screen.push_str(&suffix);
+        }
+        screen
+    }
+
+    // Per-keystroke override: raw word visible BEFORE space.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_diff(&mut e, "character"), "character");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_diff(&mut e, "safari"), "safari");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_diff(&mut e, "effect"), "effect");
+
+    // Space boundary
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_diff(&mut e, "character "), "character ");
+
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_diff(&mut e, "safari "), "safari ");
+
+    // Punctuation boundary
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_diff(&mut e, "safari."), "safari.");
+
+    // commit_diff (Enter/Tab) — word already shows as raw, commit is no-op.
+    let mut e = UltraFastViEngine::new();
+    let screen = type_diff(&mut e, "character");
+    assert_eq!(screen, "character");
+    let (bs, out) = e.commit_diff();
+    assert_eq!(bs, 0);
+    assert_eq!(out, "");
+
+    // Backspace from override state should work (O(n) replay fallback).
+    let mut e = UltraFastViEngine::new();
+    let _ = type_diff(&mut e, "character");
+    let (bs, _out) = e.backspace_diff();
+    // Should backspace 1 char ("r"), screen becomes "characte".
+    assert_eq!(bs, 1);
+
+    // Vietnamese words must still compose correctly.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_diff(&mut e, "vieetj "), "việt ");
+
+    // Words that produce valid Vietnamese syllables are NOT overridden.
+    let mut e = UltraFastViEngine::new();
+    assert_eq!(type_diff(&mut e, "chaos "), "cháo ");
+
+    // Words NOT in the dictionary should still transform.
+    let mut e = UltraFastViEngine::new();
+    let r = type_diff(&mut e, "reset ");
+    assert_ne!(r, "reset ");
+}
+
+#[test]
 fn edge_modified_vowel_tone_placement() {
     // ươi -> tone on ơ (second in ươ pair)
     let mut e = UltraFastViEngine::new();

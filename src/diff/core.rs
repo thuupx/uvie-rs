@@ -13,6 +13,36 @@ impl UltraFastViEngine {
     pub(crate) fn feed_diff_core(&mut self, ch: char) -> (usize, &str) {
         // Word boundary: commit composing word, clear state, return char directly.
         if Self::is_word_boundary(ch) {
+            // English dictionary override: if the full word matches a known
+            // English word, replace the Vietnamese transform with the raw
+            // English word + the boundary char.
+            if !self.diff.word_raw.is_empty()
+                && crate::tables::is_english_override(&self.diff.word_raw)
+            {
+                // Build full on-screen text (Vietnamese) in a stack buffer.
+                let mut full_screen = crate::buffers::new_out_buffer();
+                let _ = full_screen.push_str(&self.diff.diff_committed);
+                let _ = full_screen.push_str(&self.diff.prev_rendered);
+
+                // Build target: raw English word (preserve case) + boundary char.
+                let mut target = crate::buffers::new_out_buffer();
+                for &c in self.diff.word_raw.iter() {
+                    let _ = target.push(c);
+                }
+                let _ = target.push(ch);
+
+                // Clear all state.
+                self.buf.clear();
+                self.raw_len = 0;
+                self.out_buf.clear();
+                self.diff.clear();
+
+                // Diff from full_screen → target.
+                let (bs, _) =
+                    Self::diff_into(&full_screen, &target, &mut self.diff.diff_suffix);
+                return (bs, &self.diff.diff_suffix);
+            }
+
             self.buf.clear();
             self.raw_len = 0;
             self.out_buf.clear();
@@ -33,12 +63,14 @@ impl UltraFastViEngine {
             self.out_buf.clear();
             self.diff.raw_chars.clear();
             self.diff.key_log.clear();
+            self.diff.word_raw.clear();
             self.diff.prev_inner_render.clear();
             self.diff.last_valid_raw_len = 0;
             self.diff.last_valid_coda_start = 0;
             self.diff.last_valid_out.clear();
             let _ = self.diff.raw_chars.try_push(ch);
             let _ = self.diff.key_log.try_push(ch);
+            let _ = self.diff.word_raw.try_push(ch);
             self.feed(ch);
             // Swap out_buf into prev_rendered (zero-alloc).
             let new_composed = core::mem::take(&mut self.out_buf);

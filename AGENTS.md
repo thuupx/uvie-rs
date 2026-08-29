@@ -70,6 +70,76 @@ Trade-off: ~40% regression on short benchmarks (~130ns/keystroke) due to
 added `is_valid_vietnamese()` checks. Sentence/backspace benchmarks
 remain faster than original baseline.
 
+### Accuracy Improvement (2026-08)
+Onset↔nucleus distribution check (`onset_nucleus_compatible` in
+`src/tables/onset.rs`). Vietnamese has a hard complementary distribution
+for the palatal/velar series — `c`/`k`/`q` and `g`/`gh`/`ng`/`ngh`:
+- `gh`/`ngh` only before `i`/`e`/`ê`
+- `k` only before `i`/`e`/`ê`/`y`; `c` only before `a`/`ă`/`â`/`o`/`ô`/`ơ`/`u`/`ư`
+- `g` before back vowels + `i` (standalone `gi`); `ng` before back vowels
+- `q` only as the `qu` glide (length-1 `q` with a nucleus is invalid)
+
+Without this, `is_valid_vietnamese` accepted e.g. `gh`+`o` as valid, so a
+tone key inside an English word produced invalid Vietnamese such as
+`ghost`→`ghót`. Now `gh`+`o` is rejected → `ghost` passes through. Wired
+into both `is_valid_vietnamese` (`src/validation.rs`) and
+`is_legal_syllable` (`src/tables/mod.rs`). No Vietnamese regression
+(Telex pairs 99.98%, 22k round-trip 99.29% unchanged); English passthrough
+improved 94.45%→94.63%.
+
+Note: English words that produce *phonotactically valid* Vietnamese
+syllables (e.g. `character`→`chẩcter`, `safari`→`sầri`, `reset`→`rết`)
+cannot be passed through without a dictionary — the cross-tone
+double-vowel circumflex path (`a`+tone+`a`→`â`) is required for valid
+Vietnamese (`befe`→`bề`, `sầm` via `safam`). Restricting it regresses 851
+Telex pairs. A dictionary-based check is the only clean fix.
+
+### English Dictionary Override (2026-08)
+`src/tables/english.rs` — 2056 common English words that produce garbled
+Vietnamese+English hybrids (e.g. `character`→`chẩcter`, `safari`→`sầri`,
+`good`→`gôd`, `book`→`bôk`). Sorted static `&[&str]` array with O(log n)
+binary search — zero heap, zero dependencies, `no_std`-compatible.
+
+The override fires **per-keystroke** (not just at word boundaries): as
+soon as `word_raw` matches a dictionary word, the engine shows the raw
+English word instead of the garbled Vietnamese transform. This means the
+user sees "character" (not "chẩcter") while typing, before pressing space.
+
+**Critical: state sync after override.** When the override fires, the
+English word is committed to `diff_committed` and ALL composing state is
+cleared (`raw_chars`, `key_log`, `buf`, `out_buf`, `prev_rendered`, etc.).
+`word_raw` is preserved for future dict checks. This prevents ghost
+characters when the user continues typing past a dict word (e.g. "good" →
+"goodness"): without this, the V-C-V split would re-render the committed
+portion from `raw_chars`, producing Vietnamese transforms ("gô") instead
+of the English word ("good").
+
+The diff API tracks a lossless `word_raw: CharVec<24>` buffer in
+`DiffState` that survives V-C-V splits and double-tone-cancel (unlike
+the lossy `raw_chars`). At each keystroke, if `is_english_override
+(&word_raw)` returns true, the engine recomputes the diff from the
+pre-keystroke screen to the raw English word, then commits the word and
+clears composing state.
+
+**Excluded** from the dictionary:
+- Words whose transform is a real Vietnamese word (from 22k word list):
+  `chaos`→`cháo`, `most`→`mót`, `boots`→`bốt`, `deeds`→`đế`
+- Words whose V-C-V split components are both valid Vietnamese words:
+  `user`→`u`+`sẻ`, `banana`→`bân`+`na`
+
+Backspace in override state: after the override, the English word is in
+`diff_committed` and `prev_rendered` is empty. Backspace pops from
+`diff_committed` (and `word_raw` simultaneously) via the existing
+`key_log.is_empty()` fallback path. No special override check needed.
+
+Performance: the per-keystroke clones (`committed_before`, `prev_before`)
+are gated by `word_raw.len() >= 4` (minimum dictionary word length),
+so the common path (1-3 chars typed) has zero overhead. The dictionary
+binary search is O(log 2056) ≈ 11 comparisons. Benchmarks show no
+significant change on short benchmarks, -1.3% to -1.7% improvement on
+sentence benchmarks, and -6.8% to -8.1% improvement on backspace
+benchmarks (the old backspace override check is now dead code).
+
 ### Round 1: Eliminate heap allocations
 - `diff_into`: single-pass char counting (was double `.chars().count()`)
 - `feed_diff_core`: `mem::swap`/`mem::take` instead of `String::clone`

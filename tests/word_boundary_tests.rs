@@ -70,7 +70,8 @@ mod word_boundary_punctuation_tests {
         e.set_modern_orthography(true);
         // `user` gets V-C-V split into `u` + `sẻ` (both valid VN syllables),
         // then `@` boundary, then `hoas` → `hoá`. This is correct engine behaviour:
-        // it doesn't know `user` is English.
+        // `user` is excluded from the English dictionary because its V-C-V
+        // split components are both valid Vietnamese words.
         assert_eq!(type_diff(&mut e, "user@hoas"), "usẻ@hoá");
     }
 

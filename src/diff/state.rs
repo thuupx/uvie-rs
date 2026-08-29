@@ -34,6 +34,11 @@ pub struct DiffState {
     /// It is reset on word boundary, full-buffer, V-C-V split (set to the new
     /// syllable, mirroring `raw_chars`), commit and reset.
     pub key_log: CharVec<24>,
+    /// Full raw keystrokes for the entire current word (never truncated by
+    /// V-C-V split or double-tone-cancel). Used for English dictionary
+    /// override check at word boundaries. Cleared on word boundary, commit,
+    /// reset, and full-buffer overflow.
+    pub word_raw: CharVec<24>,
     /// Composing text currently visible on screen (for diffing).
     pub prev_rendered: OutBuffer,
     /// The inner engine's true last render (diff baseline).
@@ -69,6 +74,7 @@ impl DiffState {
         Self {
             raw_chars: CharVec::new(),
             key_log: CharVec::new(),
+            word_raw: CharVec::new(),
             prev_rendered: OutBuffer::new(),
             prev_inner_render: OutBuffer::new(),
             last_valid_raw_len: 0,
@@ -86,6 +92,7 @@ impl DiffState {
     pub fn clear(&mut self) {
         self.raw_chars.clear();
         self.key_log.clear();
+        self.word_raw.clear();
         self.prev_rendered.clear();
         self.prev_inner_render.clear();
         self.last_valid_raw_len = 0;
