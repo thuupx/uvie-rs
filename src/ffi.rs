@@ -115,6 +115,7 @@ pub extern "C" fn uvie_engine_set_input_method(engine: *mut UvieEngine, method: 
             let m = match method {
                 0 => InputMethod::Telex,
                 1 => InputMethod::Vni,
+                2 => InputMethod::SimpleTelex,
                 _ => return,
             };
             e.set_input_method(m);
@@ -131,6 +132,7 @@ pub extern "C" fn uvie_engine_get_input_method(engine: *const UvieEngine) -> c_i
         match e.input_method() {
             InputMethod::Telex => 0,
             InputMethod::Vni => 1,
+            InputMethod::SimpleTelex => 2,
         }
     })
     .unwrap_or(-1)

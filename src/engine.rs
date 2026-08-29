@@ -28,6 +28,10 @@ pub struct UltraFastViEngine {
     pub(crate) enable_quick_telex: bool,
     pub(crate) enable_modern_orthography: bool,
     pub(crate) enable_relaxed_coda: bool,
+    /// Simple Telex mode: `w` always applies horn/breve to all vowel
+    /// candidates (vneHookAll), with no standalone `w→ư`, no double-w
+    /// cancel, and no silent consume. Matches UniKey "Simple Telex".
+    pub(crate) is_simple_telex: bool,
 
     /// Incrementally maintained syllable structure (onset/nucleus/coda slots).
     pub(crate) syl_structure: SylStructure,
@@ -58,6 +62,7 @@ impl UltraFastViEngine {
             enable_quick_telex: false,
             enable_modern_orthography: false,
             enable_relaxed_coda: false,
+            is_simple_telex: false,
             syl_structure: SylStructure::new(),
             diff: DiffState::new(),
             cached_partition: (0, (0, 0, 0, 0)),
@@ -99,6 +104,7 @@ impl UltraFastViEngine {
     pub fn set_input_method(&mut self, method: InputMethod) {
         self.input_method = method;
         self.mode = mode_for(method);
+        self.is_simple_telex = method == InputMethod::SimpleTelex;
     }
     pub fn input_method(&self) -> InputMethod {
         self.input_method
@@ -324,7 +330,7 @@ fn decompose_vietnamese_char(
     let is_upper = c.is_uppercase();
     // Keystroke codes for the two supported input methods.
     let (a_circumflex, e_circumflex, o_circumflex, breve, horn, dd, s, f, r, x, j) = match method {
-        InputMethod::Telex => (
+        InputMethod::Telex | InputMethod::SimpleTelex => (
             b'a', b'e', b'o', b'w', b'w', b'd', b's', b'f', b'r', b'x', b'j',
         ),
         InputMethod::Vni => (
