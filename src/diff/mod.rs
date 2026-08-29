@@ -122,6 +122,8 @@ impl Diffable for UltraFastViEngine {
         self.buf.clear();
         self.raw_len = 0;
         self.out_buf.clear();
+        self.committed.clear();
+        self.syl_structure.clear();
         self.diff.raw_chars.clear();
         self.diff.key_log.clear();
         self.diff.prev_rendered.clear();
@@ -134,13 +136,21 @@ impl Diffable for UltraFastViEngine {
         // the following word as ghost characters and corrupts macro matching.
         self.diff.diff_committed.clear();
         self.diff.diff_suffix.clear();
+        // Clear the snapshot stack — stale snapshots from the committed word
+        // must not survive, otherwise a backspace after commit would restore
+        // state from the previous word, corrupting the engine.
+        for s in &mut self.diff.snapshots {
+            *s = None;
+        }
+        self.diff.snapshot_count = 0;
         (0, &self.diff.diff_suffix)
     }
 
     fn reset_diff(&mut self) {
-        self.buf.clear();
-        self.raw_len = 0;
-        self.out_buf.clear();
+        // Full reset: clear both the core engine state AND the diff state.
+        // Must be consistent with clear() + diff.clear() to avoid stale
+        // committed text, syl_structure, or cached partition surviving.
+        self.clear();
         self.diff.clear();
     }
 

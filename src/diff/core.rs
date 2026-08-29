@@ -25,7 +25,9 @@ impl UltraFastViEngine {
         if self.diff.raw_chars.is_full() {
             self.render_out_buf();
             let _ = self.diff.diff_committed.push_str(&self.out_buf);
-            let screen_before_len = self.diff.prev_rendered.chars().count();
+            // The committed word stays on screen — do NOT backspace it.
+            // The new character is appended after it. Returning bs=0 keeps
+            // the on-screen text consistent with diff_committed.
             self.buf.clear();
             self.raw_len = 0;
             self.out_buf.clear();
@@ -40,14 +42,18 @@ impl UltraFastViEngine {
             self.feed(ch);
             // Swap out_buf into prev_rendered (zero-alloc).
             let new_composed = core::mem::take(&mut self.out_buf);
-            let bs = screen_before_len;
             self.diff.diff_suffix.clear();
             let _ = self.diff.diff_suffix.push_str(&new_composed);
             self.diff.prev_rendered.clear();
             let _ = self.diff.prev_rendered.push_str(&new_composed);
             self.diff.prev_inner_render.clear();
             let _ = self.diff.prev_inner_render.push_str(&new_composed);
-            return (bs, &self.diff.diff_suffix);
+            // Clear snapshots — the previous word's snapshots are stale.
+            for s in &mut self.diff.snapshots {
+                *s = None;
+            }
+            self.diff.snapshot_count = 0;
+            return (0, &self.diff.diff_suffix);
         }
 
         let raw_len_before = self.raw_len;

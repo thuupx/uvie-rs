@@ -128,7 +128,9 @@ impl UltraFastViEngine {
 
     /// Copy the diff-mode raw characters into a `StackStr` for debugging/tests.
     /// Returns a stack-allocated buffer (no heap allocation).
-    pub fn raw_chars_string(&self) -> StackStr<64> {
+    /// Uses 128 bytes (not 64) because 24 raw chars can be up to 96 bytes
+    /// for non-ASCII/precomposed Vietnamese characters.
+    pub fn raw_chars_string(&self) -> StackStr<128> {
         let mut buf = StackStr::new();
         for &c in self.diff.raw_chars.iter() {
             let _ = buf.push(c);
@@ -156,6 +158,17 @@ impl UltraFastViEngine {
         let mut buf = StackStr::new();
         let _ = buf.push_str(&self.committed);
         let _ = buf.push_str(&self.out_buf);
+        buf
+    }
+
+    /// Returns the full diff-mode output (diff_committed + prev_rendered) as a
+    /// stack-allocated buffer. This is what's actually on screen in diff mode.
+    /// `current_output()` returns the legacy `committed + out_buf` which is
+    /// usually empty in diff mode and does NOT reflect the visible text.
+    pub fn current_output_diff(&self) -> StackStr<256> {
+        let mut buf = StackStr::new();
+        let _ = buf.push_str(&self.diff.diff_committed);
+        let _ = buf.push_str(&self.diff.prev_rendered);
         buf
     }
 

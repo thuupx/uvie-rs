@@ -6,7 +6,7 @@
 use crate::engine::UltraFastViEngine;
 use crate::modes::IS_VOWEL;
 use crate::syllable::{
-    F_CIRCUMFLEX, F_HORN, F_LITERAL, F_TONE_SET, NucleusKind, OnsetKind, Syl, SylStructure,
+    F_CAPS, F_CIRCUMFLEX, F_HORN, F_LITERAL, F_TONE_SET, NucleusKind, OnsetKind, Syl, SylStructure,
 };
 use crate::tables::{is_legal_coda, is_legal_nucleus, is_legal_onset, tone_allowed_for_coda};
 
@@ -119,9 +119,11 @@ impl SyllableValidator for UltraFastViEngine {
         }
 
         // Special case: `qu` digraph.
+        // Check flags excluding F_CAPS and F_LITERAL — uppercase "Qua" or
+        // passthrough entries should still be treated as the qu glide.
         if onset_end < n && onset_end > 0 && self.buf.get(onset_end - 1).base == b'q' {
             let next = self.buf.get(onset_end);
-            if next.base == b'u' && next.flags == 0 {
+            if next.base == b'u' && next.flags & !(F_CAPS | F_LITERAL) == 0 {
                 onset_end += 1;
             }
         }
@@ -137,7 +139,8 @@ impl SyllableValidator for UltraFastViEngine {
                 let next = self.buf.get(onset_end);
                 let has_vowel_after_i =
                     onset_end + 1 < n && self.is_vowel_entry(self.buf.get(onset_end + 1));
-                if next.base == b'i' && next.flags == 0 && has_vowel_after_i {
+                if next.base == b'i' && next.flags & !(F_CAPS | F_LITERAL) == 0 && has_vowel_after_i
+                {
                     onset_end += 1;
                 }
             }
@@ -164,7 +167,13 @@ impl SyllableValidator for UltraFastViEngine {
             s.flags |= F_LITERAL;
             s.flags &= !(F_CIRCUMFLEX | F_HORN | F_TONE_SET);
             s.tone = 0;
-            s.out = s.base as char;
+            // Preserve uppercase rendering — F_CAPS must still produce an
+            // uppercase output char (e.g. "Đ" → "D" after triple-cancel).
+            s.out = if s.flags & F_CAPS != 0 {
+                (s.base as char).to_ascii_uppercase()
+            } else {
+                s.base as char
+            };
         }
     }
 

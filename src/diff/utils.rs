@@ -3,7 +3,7 @@
 
 use crate::buffers::OutBuffer;
 use crate::engine::UltraFastViEngine;
-use crate::modes::{IS_TONE_KEY, Mode};
+use crate::modes::{IS_TONE_KEY, InputMethod, Mode};
 
 impl UltraFastViEngine {
     /// Compute minimal diff from `prev` → `new`, writing suffix into `out`.
@@ -106,6 +106,10 @@ impl UltraFastViEngine {
     /// On `std`: uses a thread-local scratch engine to avoid allocating a
     /// fresh `UltraFastViEngine` on every V-C-V split.
     /// On `no_std`: creates a new engine each time (no `thread_local!`).
+    ///
+    /// Sets both `mode` AND `input_method` on the scratch engine so that
+    /// `decompose_vietnamese_char` (which uses `input_method`) works correctly
+    /// for VNI precomposed input.
     pub(crate) fn rerender_chars(raw: &[char], mode: &'static Mode) -> OutBuffer {
         #[cfg(feature = "std")]
         {
@@ -117,6 +121,12 @@ impl UltraFastViEngine {
                 let mut eng = s.borrow_mut();
                 eng.clear();
                 eng.mode = mode;
+                // Sync input_method with the mode so decompose_vietnamese_char
+                // uses the correct Telex/VNI key mappings.
+                eng.input_method = match mode.resolver {
+                    crate::modes::ResolverKind::Telex => InputMethod::Telex,
+                    crate::modes::ResolverKind::Vni => InputMethod::Vni,
+                };
                 for &c in raw {
                     eng.feed(c);
                 }
@@ -127,6 +137,10 @@ impl UltraFastViEngine {
         {
             let mut eng = UltraFastViEngine::new();
             eng.mode = mode;
+            eng.input_method = match mode.resolver {
+                crate::modes::ResolverKind::Telex => InputMethod::Telex,
+                crate::modes::ResolverKind::Vni => InputMethod::Vni,
+            };
             for &c in raw {
                 eng.feed(c);
             }

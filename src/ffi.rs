@@ -305,7 +305,9 @@ pub extern "C" fn uvie_engine_current_output(
         let Some(e) = lock_engine_const(engine) else {
             return 0;
         };
-        let text = e.current_output();
+        // Use diff-aware output: in diff mode, the visible text is
+        // diff_committed + prev_rendered, NOT the legacy committed + out_buf.
+        let text = e.current_output_diff();
         write_output(&text, out_buf, out_len)
     })
     .unwrap_or(0)
