@@ -330,3 +330,52 @@ pub fn nucleus_tone_target(nucleus: &[char]) -> Option<usize> {
 pub fn is_legal_nucleus(nucleus: &[char]) -> bool {
     nucleus_tone_target(nucleus).is_some()
 }
+
+/// Returns `true` if the nucleus can be followed by a consonant coda.
+///
+/// In Vietnamese phonotactics, only **centering diphthongs** (where the second
+/// vowel is the syllabic peak) can take a consonant coda. **Closing
+/// diphthongs** (where the second vowel is an offglide: ai, ao, au, ay, eo,
+/// êu, iu, oi, ôi, ơi, ui, ưi, ưu, âu, ây, etc.) and **all triphthongs** are
+/// always open syllables — they cannot be followed by a coda consonant.
+///
+/// Centering diphthongs that CAN take a coda:
+///   iê, yê, uê, uô, uo, ươ, oa, oe, oă, uâ, uy, oo
+/// Plus the centering triphthong uyê (chuyển, khuyên, truyền).
+///
+/// Examples:
+///   - iê + n = "iên" (tiên) ✓    ai + n = "ain" ✗
+///   - uô + c = "uôc" (buộc) ✓    ao + c = "aoc" ✗
+///   - oa + n = "oan" (khoán) ✓   au + n = "aun" ✗
+///   - uy + t = "uyt" (buýt) ✓
+///   - uyê + n = "uyên" (chuyển) ✓
+///
+/// Monophthongs (single vowels) always allow codas.
+/// `oo` + coda is an engine extension for slang/colloquial (boóng, choòng).
+#[inline]
+pub fn nucleus_allows_coda(nucleus: &[char]) -> bool {
+    if nucleus.len() <= 1 {
+        return true; // Monophthongs always allow codas.
+    }
+    if nucleus.len() >= 3 {
+        // Only the centering triphthong uyê can take a coda (chuyển, khuyên).
+        // All other triphthongs (iêu, oai, ươi, uôi, etc.) are always open.
+        return matches!(nucleus, ['u', 'y', 'ê']);
+    }
+    // Diphthongs: only centering diphthongs allow codas.
+    matches!(
+        nucleus,
+        ['i', 'ê']
+            | ['y', 'ê'] // iê, yê → tiên, yên
+            | ['u', 'ê'] // uê → huênh, chuếch
+            | ['u', 'ô'] // uô → buông, muốn
+            | ['u', 'o'] // uo → thúong (precursor to ươ)
+            | ['ư', 'ơ'] // ươ → hướng, thước
+            | ['o', 'a'] // oa → khoán, hoàng
+            | ['o', 'e'] // oe → khoen
+            | ['o', 'ă'] // oă → hoăng
+            | ['u', 'â'] // uâ → chuẩn, khuất
+            | ['u', 'y'] // uy → buýt, khuyên
+            | ['o', 'o'] // oo → boóng (engine extension)
+    )
+}

@@ -8,7 +8,9 @@ use crate::modes::IS_VOWEL;
 use crate::syllable::{
     F_CAPS, F_CIRCUMFLEX, F_HORN, F_LITERAL, F_TONE_SET, NucleusKind, OnsetKind, Syl, SylStructure,
 };
-use crate::tables::{is_legal_coda, is_legal_nucleus, is_legal_onset, tone_allowed_for_coda};
+use crate::tables::{
+    is_legal_coda, is_legal_nucleus, is_legal_onset, nucleus_allows_coda, tone_allowed_for_coda,
+};
 
 /// Syllable validation and structural analysis.
 pub(crate) trait SyllableValidator {
@@ -70,6 +72,12 @@ impl SyllableValidator for UltraFastViEngine {
             return false;
         }
         if !is_legal_nucleus(nuc_slice) {
+            return false;
+        }
+        // Closing diphthongs (ai, ao, au, ay, eo, êu, etc.) and triphthongs
+        // cannot take consonant codas — they are always open syllables.
+        // Without this check, "trains" → "tráin" instead of passthrough.
+        if !coda_slice.is_empty() && !nucleus_allows_coda(nuc_slice) {
             return false;
         }
         if !is_legal_coda(coda_slice, self.enable_relaxed_coda) {
