@@ -1087,11 +1087,11 @@ fn comprehensive_vietnamese_phonotactics() {
         ("eeww", "eeww"),
         ("uow", "uơ"), // open [u,ơ] — horn needs a following coda
         ("uoww", "uow"),
-        ("uowf", "ườ"),
-        ("uows", "ướ"),
-        ("uowj", "uợ"), // open [u,ơ] + nặng — horn needs a following coda
-        ("uowr", "ưở"),
-        ("uowx", "ưỡ"),
+        ("uowf", "uờ"), // open [u,ơ] + tone — horn needs a following coda
+        ("uows", "uớ"),
+        ("uowj", "uợ"),
+        ("uowr", "uở"),
+        ("uowx", "uỡ"),
         ("ow", "ơ"),
         ("uw", "ư"),
         ("aw", "ă"),
