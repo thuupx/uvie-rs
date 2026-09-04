@@ -140,6 +140,10 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
         tone_idx: 1,
     }, // ươ (hướng → tone on ơ, index 1)
     NucleusEntry {
+        seq: &['u', 'ơ'],
+        tone_idx: 1,
+    }, // uơ (thuở, huơ — /uə/ open: horn on the o, plain u)
+    NucleusEntry {
         seq: &['u', 'ô'],
         tone_idx: 1,
     }, // uô: tone on ô (nuốt, thuốc, etc.)
@@ -350,4 +354,108 @@ pub fn nucleus_allows_coda(nucleus: &[char]) -> bool {
             | ['u', 'y'] // uy → buýt, khuyên
             | ['o', 'o'] // oo → boóng (engine extension)
     )
+}
+
+/// Coda class for rhyme compatibility (teen-code shorthands normalized).
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum CodaClass {
+    M,
+    N,
+    Ng,
+    Nh,
+    Ch,
+    P,
+    T,
+    C,
+}
+
+fn classify_coda(coda: &[u8]) -> Option<CodaClass> {
+    match coda {
+        b"m" => Some(CodaClass::M),
+        b"n" => Some(CodaClass::N),
+        b"ng" | b"g" => Some(CodaClass::Ng),
+        b"nh" | b"h" | b"nk" => Some(CodaClass::Nh),
+        b"ch" => Some(CodaClass::Ch),
+        b"p" => Some(CodaClass::P),
+        b"t" => Some(CodaClass::T),
+        b"c" | b"k" => Some(CodaClass::C),
+        // Vowel off-glide codas (i/y/u/o) are handled by the nucleus table;
+        // accept them defensively.
+        b"i" | b"y" | b"u" | b"o" => Some(CodaClass::N),
+        _ => None,
+    }
+}
+
+/// Rhyme-level (nucleus + coda) compatibility per the standard Quốc Ngữ rime
+/// inventory.
+///
+/// Stricter than [`nucleus_allows_coda`]: also encodes the per-vowel coda
+/// restrictions that the coarse centering/closing split misses. Without this,
+/// tone keys inside English words produce fake Vietnamese such as
+/// `bings`→`bíng`, `thecs`→`théc`, `sowrng`→`sởng`.
+///
+/// Monophthong coda sets (standard orthography):
+///   - `a`: m n ng nh p t c ch (`anh`/`ach` use letter a for /ă/)
+///   - `ă â e o ô u`: m n ng p t c
+///   - `ê i y`: m n nh p t ch (no velar ng/c — "inh" not "ing")
+///   - `ơ`: m n p t only (no velar/palatal)
+///   - `ư`: m n ng t c (no p, no palatal)
+///
+/// Diphthong coda sets (centering only, per the standard rime table):
+///   - `iê yê`: m n ng p t c · `uô`: m n ng t c · `ươ`: m n ng p t c
+///   - `uâ`: m n ng t c · `uê`: m n nh p t ch · `uy`: n nh p t ch
+///   - `oa`: all eight · `oe`: m n p t c · `oă`: m n ng t c
+///   - `uo` (/uə/ transient): m n ng t c · `uơ`: open only
+///   - `oo` (engine extension): any consonant coda (boóng, choòng)
+///
+/// In `relaxed` mode the lone `g`/`h` coda shorthands bypass this check
+/// entirely (teen code, rendered verbatim — e.g. "đặh").
+pub fn rhyme_coda_compatible(nucleus: &[char], coda: &[u8], relaxed: bool) -> bool {
+    if coda.is_empty() {
+        return true;
+    }
+    // Teen-code shorthands (relaxed mode): rendered verbatim, no rhyme
+    // restriction (e.g. "đawjh" → "đặh").
+    if relaxed && matches!(coda, b"g" | b"h") {
+        return true;
+    }
+    let Some(class) = classify_coda(coda) else {
+        return false;
+    };
+    use CodaClass::*;
+    match nucleus {
+        ['a'] => true,
+        ['ă'] | ['â'] | ['ô'] => matches!(class, M | N | Ng | P | T | C),
+        // e/o/u: the plain vowel is a transient for ê/ô/ư (oo/w transforms),
+        // and c is a transient for ch — accept the intermediate states. [e]+ch
+        // is also a growth intermediate (e→ê via the second e: "lech"+"e" →
+        // "lệch"), unlike [o]+ch / [u]+ch whose transforms dead-end.
+        ['e'] => matches!(class, M | N | Ng | P | T | C | Ch),
+        ['o'] | ['u'] => matches!(class, M | N | Ng | P | T | C),
+        ['ê'] => true,
+        ['i'] | ['y'] => matches!(class, M | N | Nh | P | T | Ch | C),
+        ['ơ'] => matches!(class, M | N | P | T),
+        ['ư'] => matches!(class, M | N | Ng | T | C),
+        // Centering diphthongs.
+        ['i', 'ê'] | ['y', 'ê'] => matches!(class, M | N | Ng | P | T | C),
+        ['u', 'ô'] => matches!(class, M | N | Ng | P | T | C),
+        ['ư', 'ơ'] => matches!(class, M | N | Ng | P | T | C),
+        ['u', 'â'] => matches!(class, M | N | Ng | T | C),
+        ['u', 'ê'] => matches!(class, M | N | Nh | P | T | Ch | C),
+        ['u', 'y'] => matches!(class, N | Nh | P | T | Ch | C),
+        ['o', 'a'] => matches!(class, M | N | Ng | Nh | P | T | C | Ch),
+        ['o', 'e'] => matches!(class, M | N | P | T | C),
+        ['o', 'ă'] => matches!(class, M | N | Ng | T | C),
+        // /uə/ rhyme (thuốc, muốn, buông) — transient plain-o form; the toned
+        // form resolves to ['u','ô'] via apply_coda_tone_rule.
+        ['u', 'o'] => matches!(class, M | N | Ng | T | C),
+        // /uə/ open (thuở) is written with the horn; closed takes uô.
+        ['u', 'ơ'] => false,
+        // oo engine extension (boóng, choòng) — keep fully permissive.
+        ['o', 'o'] => true,
+        // uyê triphthong (chuyên, quyết).
+        ['u', 'y', 'ê'] => matches!(class, N | T),
+        // Closing diphthongs and all other triphthongs are always open.
+        _ => false,
+    }
 }

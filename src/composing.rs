@@ -12,6 +12,7 @@ pub(crate) trait Composable {
     fn process_key(&mut self, b: u8, caps: bool);
     fn handle_consonant(&mut self, b: u8, caps: bool);
     fn handle_vowel(&mut self, b: u8, caps: bool);
+    fn promote_uo_horn_rhyme(&mut self);
     fn push_raw_key(&mut self, b: u8, caps: bool);
     fn render_out_buf(&mut self);
     fn render_passthrough(&mut self);
@@ -231,6 +232,10 @@ impl Composable for UltraFastViEngine {
 
     #[inline]
     fn handle_consonant(&mut self, b: u8, caps: bool) {
+        // Deferred /uə/ promotion: [u,ơ] (from u + w) becomes [ư,ơ] once a
+        // coda follows — the closed /uə/ rhyme with a horn is written "ươ"
+        // ("thuowcs" → "thước", "thuowng" → "thương", "nguowcj" → "ngược").
+        self.promote_uo_horn_rhyme();
         self.buf.push(Syl::literal(b, caps));
     }
 
@@ -242,6 +247,14 @@ impl Composable for UltraFastViEngine {
                 let syl = self.buf.get(target_idx).clone();
                 // Triple-cancel: if target already has circumflex, revert to literal.
                 if syl.flags & F_CIRCUMFLEX != 0 {
+                    // A toned circumflex vowel is a resolved rhyme (ố, ồ, ậ —
+                    // e.g. the /uə/ resolution "thuocs" → "thuốc"), not a
+                    // user-typed "aa" awaiting cancel. Absorb the repeated
+                    // vowel instead of destroying the rhyme ("thuocso" stays
+                    // "thuốc").
+                    if syl.flags & F_TONE_SET != 0 && self.is_valid_vietnamese() {
+                        return;
+                    }
                     if self.is_valid_vietnamese() {
                         let reverted = Syl::literal(syl.base, syl.flags & F_CAPS != 0);
                         self.buf.set(target_idx, reverted);
@@ -287,8 +300,42 @@ impl Composable for UltraFastViEngine {
             }
         }
 
+        // Deferred /uə/ promotion: [u,ơ] + i/u completes the triphthong
+        // ("huowi" → "ươi", "huowu" → "ươu") — promote the u to ư first.
+        if matches!(b, b'i' | b'u') && !self.buf.is_empty() {
+            self.promote_uo_horn_rhyme();
+        }
+
         // Plain vowel - just push.
         self.buf.push(Syl::literal(b, caps));
+        self.reapply_tone_after_nucleus_change();
+    }
+
+    /// Promote the deferred /uə/ horn rhyme: nucleus exactly [u plain, ơ
+    /// (horned o)] → horn the u ("thuở" + coda → "thước"-family, "huowi" →
+    /// "ươi"). No-op in every other configuration.
+    #[inline]
+    fn promote_uo_horn_rhyme(&mut self) {
+        let n = self.buf.len();
+        if n < 2 {
+            return;
+        }
+        let (_, nucleus_start, nucleus_end, coda_start) = self.partition_syllable();
+        // Only an open [u,ơ] nucleus (no coda yet — the caller promotes before
+        // pushing the new entry) with exactly two vowels.
+        if coda_start < n || nucleus_end - nucleus_start != 2 {
+            return;
+        }
+        let u_syl = self.buf.get(nucleus_start);
+        let o_syl = self.buf.get(nucleus_start + 1);
+        if u_syl.base != b'u' || o_syl.base != b'o' {
+            return;
+        }
+        if u_syl.flags & (F_HORN | F_CIRCUMFLEX) != 0 || o_syl.flags & F_HORN == 0 {
+            return;
+        }
+        let promoted = self.buf.get(nucleus_start).clone().with_horn();
+        self.buf.set(nucleus_start, promoted);
         self.reapply_tone_after_nucleus_change();
     }
 

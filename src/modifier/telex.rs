@@ -251,27 +251,66 @@ impl TelexModifier for UltraFastViEngine {
                 if idx > nucleus_start && self.buf.get(idx - 1).base == b'u' {
                     return false;
                 }
+                // [u,ơ] state (the o already horned): horn-ing the u here is
+                // the deferred /ɨə/ promotion — it must not fire on a second
+                // 'w' ("uoww" → "uow" is a cancel, not "ươ"). The promotion
+                // happens when a coda or triphthong vowel follows instead.
+                if idx + 1 < self.buf.len() {
+                    let next = self.buf.get(idx + 1);
+                    if next.base == b'o' && next.flags & F_HORN != 0 {
+                        return false;
+                    }
+                }
                 let updated = self.buf.get(idx).clone().with_horn();
                 self.buf.set(idx, updated);
                 self.reapply_tone_after_nucleus_change();
                 true
             }
             b'o' => {
+                // Resolved uô form (from the /uə/ tone resolution or the oo
+                // merge) + w → the /ɨə/ interpretation: swap the circumflex
+                // for a horn and promote a preceding plain u
+                // ("thuocsw" → "thước", "xuongsw" → "xướng").
+                if syl.flags & F_CIRCUMFLEX != 0 {
+                    let mut swapped = Syl {
+                        base: syl.base,
+                        out: syl.out,
+                        tone: syl.tone,
+                        flags: (syl.flags & !F_CIRCUMFLEX) | F_HORN,
+                    };
+                    swapped.recompute_out();
+                    self.buf.set(idx, swapped);
+                    if idx > 0 && idx > nucleus_start {
+                        let prev = self.buf.get(idx - 1);
+                        if prev.base == b'u'
+                            && prev.flags & (F_HORN | F_CIRCUMFLEX) == 0
+                            && !self.is_u_glide(idx - 1)
+                        {
+                            let promoted = prev.clone().with_horn();
+                            self.buf.set(idx - 1, promoted);
+                        }
+                    }
+                    self.reapply_tone_after_nucleus_change();
+                    return true;
+                }
                 let updated = self.buf.get(idx).clone().with_horn();
                 self.buf.set(idx, updated);
-                if idx > 0 && idx > nucleus_start {
-                    let prev = self.buf.get(idx - 1);
-                    // Promote a preceding plain 'u' to 'ư' when 'o' receives a
-                    // horn, forming the "ươ" diphthong (e.g. "nguow" → "ngươ").
-                    // Only check that no horn/circumflex is already set; F_CAPS
-                    // (uppercase) must NOT block the promotion, otherwise
-                    // "NGUOWCJ" produces "NGỰOC" instead of "NGƯỢC".
-                    if prev.base == b'u'
-                        && prev.flags & (F_HORN | F_CIRCUMFLEX) == 0
-                        && !self.is_u_glide(idx - 1)
-                    {
-                        let promoted = prev.clone().with_horn();
-                        self.buf.set(idx - 1, promoted);
+                // Deferred /uə/ promotion fires immediately when the [u,ơ] is
+                // not a final open syllable: a coda or a trailing nucleus
+                // vowel follows ("buonw" → "bươn", "buoiw" → "ươi",
+                // "thuocws" → "thước"). A bare open "huow" stays "huơ".
+                let n2 = self.buf.len();
+                let (_, _, nucleus_end, coda_start) = self.partition_syllable();
+                if coda_start < n2 || idx + 1 < nucleus_end {
+                    if idx > 0 {
+                        let prev = self.buf.get(idx - 1);
+                        if prev.base == b'u'
+                            && prev.flags & (F_HORN | F_CIRCUMFLEX) == 0
+                            && !self.is_u_glide(idx - 1)
+                        {
+                            let promoted = prev.clone().with_horn();
+                            self.buf.set(idx - 1, promoted);
+                        }
                     }
                 }
                 self.reapply_tone_after_nucleus_change();

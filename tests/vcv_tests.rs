@@ -877,7 +877,7 @@ fn comprehensive_vietnamese_phonotactics() {
         ("uowng", "ương"),
         ("uowngs", "ướng"),
         ("uowc", "ươc"),
-        ("uowj", "ượ"),
+        ("uowj", "uợ"), // open [u,ơ] + nặng — horn needs a following coda
         ("uowcs", "ước"),
         ("uy", "uy"),
         ("uys", "uý"),
@@ -1085,11 +1085,11 @@ fn comprehensive_vietnamese_phonotactics() {
         ("aaww", "aaww"),
         ("eew", "eew"),
         ("eeww", "eeww"),
-        ("uow", "ươ"),
+        ("uow", "uơ"), // open [u,ơ] — horn needs a following coda
         ("uoww", "uow"),
         ("uowf", "ườ"),
         ("uows", "ướ"),
-        ("uowj", "ượ"),
+        ("uowj", "uợ"), // open [u,ơ] + nặng — horn needs a following coda
         ("uowr", "ưở"),
         ("uowx", "ưỡ"),
         ("ow", "ơ"),
@@ -1299,16 +1299,16 @@ fn mid_nucleus_tone_with_various_codas() {
         ("lajat", "lật"),
         ("lajap", "lập"),
         ("ngajac", "ngậc"),
-        ("thajach", "thậch"),
+        ("thajang", "thậng"), // â+ng: valid rhyme (â takes ng, not ch)
         ("lajam", "lậm"),
         // ô + coda: n, p, ng
         ("tojon", "tộn"),
         ("tojop", "tộp"),
         ("ngojong", "ngộng"),
-        // iê + coda: n, c, ch, m
+        // iê + coda: n, c, m (iê takes c, not ch — "lệch" is ê+ch)
         ("iejen", "iện"),
         ("iejec", "iệc"),
-        ("iejech", "iệch"),
+        ("lejech", "lệch"),
         ("iejem", "iệm"),
         // uê + coda: n → uện (not uyên)
         ("uejen", "uện"),

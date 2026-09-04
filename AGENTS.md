@@ -70,6 +70,69 @@ Trade-off: ~40% regression on short benchmarks (~130ns/keystroke) due to
 added `is_valid_vietnamese()` checks. Sentence/backspace benchmarks
 remain faster than original baseline.
 
+### Accuracy Improvement (2026-09): rhyme-level coda validation + /uə/ tone resolution
+Follow-up to the hiatus fix, auditing the engine's accepted syllable space
+against the hieuthi all-Vietnamese-syllables reference list (17,974):
+
+1. **`rhyme_coda_compatible`** (`src/tables/nucleus.rs`) — rhyme-level
+   (nucleus + coda) table replacing `nucleus_allows_coda` at both call sites
+   (`is_legal_syllable`, `is_valid_vietnamese`). Encodes per-vowel coda
+   restrictions: i/y take nh/ch not ng/c (`bings`→`bíng` fixed), ơ only
+   m n p t (`sowrng`→`sởng` fixed), ư no p/nh/ch, ê keeps ng (ref has
+   "êng"), diphthong sets per the standard rime table. Growth intermediates
+   stay typeable: `c` accepted for e/o/u/i/y (c→ch, e→ê via oo, u→ư via w) —
+   the data-driven scrambled tone-key encodings (`bicjh`→`bịch`,
+   `becehj`→`bệch`) transit through those states. Relaxed-mode `g`/`h`
+   shorthands bypass the check (teen code, "đawjh"→"đặh").
+2. **/uə/ tone resolution** (`resolve_uo_rhyme_tone` in `src/tone_handler.rs`,
+   called from `apply_coda_tone_rule`): plain [u,o] + consonant coda + tone →
+   the second vowel takes the circumflex and carries the tone. Fixes the
+   natural typing order `thuocs`→`thuốc`, `muons`→`muốn`, `nguonf`→`nguồn`,
+   `thuocj`→`thuộc` (previously "thúoc"/"múon" — the tone landed on the u).
+   The scrambled pair orders ("thuocos") already worked via the oo-merge.
+   NOTE: the /uə/ rhyme is ALWAYS written uô when closed (thuộc = u+ộ, no
+   horn — verified against the 22k list) and uơ (horn on the o only) when
+   open (thuở). The horn form ("thưởng"/"xướng") requires the w key
+   ("xuongsw"→"xướng" per the pairs data; "xuongso"→"xuống" without it).
+3. **Triple-cancel guard** (`handle_vowel`): a toned circumflex vowel is a
+   resolved rhyme (ố/ồ/ậ), not a user-typed "aa" — absorb the repeated
+   vowel instead of cancelling ("thuocso" stays "thuốc").
+4. Updated `mid_nucleus_tone_with_various_codas` vehicles: "thajach"→"thậch"
+   and "iejech"→"iệch" used rhymes that don't exist (â+ch, iê+ch — iê takes
+   c not ch); replaced with valid rhymes (â+ng, ê+ch "lệch").
+
+### Accuracy Improvement (2026-09): open /uə/ "uơ" + deferred ư promotion
+Fixes the last 6 telex_pairs failures ("huow"→"hươ" vs data "huơ") and 2
+round-trip failures ("thuở", "đời thuở"):
+
+1. **`['u','ơ']` nucleus** (tone_idx 1): the /uə/ OPEN rhyme is written "uơ"
+   with the horn on the o only, plain u ("thuở", "huơ").
+2. **Deferred ư promotion** (`try_apply_w_non_cancel`): u + w horns the o
+   WITHOUT promoting the u. The promotion fires immediately only when the
+   [u,ơ] is not a final open syllable — a coda or a trailing nucleus vowel
+   follows ("buonw"→"bươn", "buoiw"→"ươi", "thuocws"→"thước"); a bare open
+   "huow" stays "huơ". `promote_uo_horn_rhyme` (composing.rs) handles the
+   coda-arrives-later order ("thuowcs"→"thước") and the triphthong
+   completion ("huowi"→"hươi", "huowu"→"hươu").
+3. **Circumflex→horn swap** (the 'o' branch): a resolved uô form + w → the
+   /ɨə/ interpretation ("thuocsw"→"thước", "xuongsw"→"xướng",
+   "dduongwf"→"đường").
+4. **-ech resolution** (`resolve_ech_rhyme_tone`): plain [e] + coda "ch" +
+   tone → the e takes the circumflex ("lechj"→"lệch" — the -ech rhyme is
+   always written "êch" when toned; sắc/nặng only, 20+ words). [e]+ch is a
+   growth intermediate (e→ê via the second e); [e]+ch with huyền has no
+   words → passthrough.
+5. Updated locked expectations to the open-form semantics: "huow"→"huơ",
+   "huows"→"huớ", "uow"→"uơ", "uowj"→"uợ" (the ư promotion needs a
+   following coda/vowel).
+
+telex_pairs: 0 failures (was 6). round_trip: 158 (was 160).
+
+Known remaining trade-offs: `thecs`→`théc` (the c→ch growth intermediate
+accepts a toned state; needed for the scrambled pairs), `boong`→`bông` /
+`xoong`→`xông` (oo→ô is fundamental Telex, same as UniKey), `dust`→`dút` in
+the legacy feed() API (dict override handles it in the app's feed_diff path).
+
 ### Accuracy Improvement (2026-09): orthography-gated V-C-V + rime table cleanup
 Two changes grounded in the standard Quốc Ngữ rime inventory (Vietnamese
 orthography; "Các vần trong tiếng Việt"):

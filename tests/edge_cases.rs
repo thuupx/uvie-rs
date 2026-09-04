@@ -180,9 +180,10 @@ fn edge_modified_vowel_tone_placement() {
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "huowns"), "hướn");
 
-    // ươ alone -> tone on ơ
+    // ươ alone -> tone on ơ; open [u,ơ] keeps the plain u (the /uə/ open
+    // rhyme "uơ" — "thuở" family). The horn form needs a following coda.
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "huows"), "hướ");
+    assert_eq!(type_seq(&mut e, "huows"), "huớ");
 
     // âu -> tone on â
     let mut e = UltraFastViEngine::new();

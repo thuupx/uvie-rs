@@ -91,3 +91,53 @@ fn locked_vcv_behavior_unchanged() {
         assert_eq!(type_diff(&mut e, input), expected, "input {input}");
     }
 }
+
+#[test]
+fn uo_rhyme_tone_resolution() {
+    // /uə/ rhyme: plain [u,o] + consonant coda + tone → the second vowel takes
+    // the circumflex and carries the tone ("thuốc", "muốn", "nguồn", "thuộc").
+    // Both keystroke orders must work.
+    let cases = [
+        ("thuocs", "thuốc"),
+        ("muons", "muốn"),
+        ("vuots", "vuốt"),
+        ("suots", "suốt"),
+        ("nguonf", "nguồn"),
+        ("thuocj", "thuộc"),
+        ("muonj", "muộn"),
+        // Scrambled tone-key orders (data-driven pair encodings).
+        ("thuocos", "thuốc"),
+        ("muonos", "muốn"),
+        ("thuocso", "thuốc"),
+    ];
+    for (input, expected) in cases {
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, input), expected, "input {input}");
+    }
+}
+
+#[test]
+fn monophthong_coda_restrictions() {
+    // Per-vowel coda rules: i/y take nh/ch (not ng/c), ơ only m n p t, etc.
+    // Tone keys inside English words must not produce fake Vietnamese.
+    let cases = [
+        ("bings", "bings"),   // i+ng invalid
+        ("myng", "myng"),     // y+ng invalid
+        ("sowrng", "sowrng"), // ơ+ng invalid
+        ("thuonh", "thuonh"), // uo+nh invalid
+        // Growth intermediates stay typeable (c → ch).
+        ("bicjh", "bịch"),
+        ("bicsh", "bích"),
+        ("becehj", "bệch"),
+        // Real words with the restricted codas still work.
+        ("tinhf", "tình"),  // i+nh, huyền ✓
+        ("tinjh", "tịnh"),  // i+nh, nặng ✓
+        ("lechf", "lechf"), // ê+ch with huyền: no such word → passthrough
+        ("lechj", "lệch"),  // ê+ch, nặng ✓ (resolution e→ê)
+        ("chowpj", "chợp"), // ơ+p, nặng ✓
+    ];
+    for (input, expected) in cases {
+        let mut e = UltraFastViEngine::new();
+        assert_eq!(type_diff(&mut e, input), expected, "input {input}");
+    }
+}

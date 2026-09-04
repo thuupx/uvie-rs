@@ -270,11 +270,14 @@ fn do_not_apply_to_english() {
 
 #[test]
 fn special_uow_combo() {
+    // Open [u,o]+w keeps the plain u: the /uə/ open rhyme "uơ" ("thuở"
+    // family). The ư promotion fires only when a coda or triphthong vowel
+    // follows ("thuowcs" → "thước", "huowi" → "hươi").
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "huow"), "hươ");
+    assert_eq!(type_seq(&mut e, "huow"), "huơ");
 
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "huows"), "hướ");
+    assert_eq!(type_seq(&mut e, "huows"), "huớ");
 }
 
 #[test]

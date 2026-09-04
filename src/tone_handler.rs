@@ -1,7 +1,7 @@
 //! Tone key handling and tone carrier placement logic.
 
 use crate::engine::UltraFastViEngine;
-use crate::syllable::{F_HORN, F_LITERAL, F_TONE_SET, Syl};
+use crate::syllable::{F_CIRCUMFLEX, F_HORN, F_LITERAL, F_TONE_SET, Syl};
 use crate::tables::{nucleus_tone_target, onset_is_gi, onset_is_qu};
 use crate::validation::SyllableValidator;
 
@@ -11,6 +11,8 @@ pub(crate) trait ToneHandler {
     fn tone_carrier_idx(&self) -> Option<usize>;
     fn reapply_tone_after_nucleus_change(&mut self);
     fn apply_coda_tone_rule(&mut self);
+    fn resolve_uo_rhyme_tone(&mut self);
+    fn resolve_ech_rhyme_tone(&mut self);
 }
 
 impl ToneHandler for UltraFastViEngine {
@@ -265,6 +267,17 @@ impl ToneHandler for UltraFastViEngine {
     /// coda is typed).
     #[inline]
     fn apply_coda_tone_rule(&mut self) {
+        // /uə/ rhyme resolution: plain [u,o] + consonant coda + tone → the
+        // second vowel takes the circumflex and carries the tone ("thuocs" →
+        // "thuốc", "muons" → "muốn", "nguonf" → "nguồn"). Without this, the
+        // tone lands on the u and produces fake Vietnamese ("thúoc", "múon").
+        // Open /uə/ is written "uơ" (horn) and is handled by the w-modifier.
+        self.resolve_uo_rhyme_tone();
+        // -ech rhyme resolution: plain [e] + coda "ch" + tone → the e takes
+        // the circumflex ("lechj" → "lệch", "kechs" → "ếch" — the -ech rhyme
+        // is always written "êch" when toned).
+        self.resolve_ech_rhyme_tone();
+
         if self.enable_modern_orthography {
             return; // Modern mode already places tone on second vowel.
         }
@@ -316,5 +329,103 @@ impl ToneHandler for UltraFastViEngine {
             s.flags |= F_TONE_SET;
             s.recompute_out();
         }
+    }
+
+    /// /uə/ rhyme resolution: plain `[u, o]` + consonant coda + tone → the
+    /// second vowel takes the circumflex and carries the tone.
+    ///
+    /// The /uə/ rhyme is written "uô" when closed (`thuốc`, `muốn`, `nguồn`,
+    /// `thuộc` — always with the circumflex on the second vowel) and "uơ"
+    /// (horn) when open (`thuở`). The plain-o form only exists transiently
+    /// while typing, so once a tone is applied to a closed [u,o] syllable the
+    /// o must resolve to ô. Runs at render time so both keystroke orders work
+    /// ("thuocs" and "thuocos").
+    #[inline]
+    fn resolve_uo_rhyme_tone(&mut self) {
+        let n = self.buf.len();
+        if n < 3 {
+            return; // Need at least u + o + coda (onset optional).
+        }
+
+        let (_, nucleus_start, nucleus_end, coda_start) = self.partition_syllable();
+
+        // Must have a consonant coda.
+        if coda_start >= n {
+            return;
+        }
+
+        // Nucleus must be exactly the plain pair [u, o] (no horn/circumflex).
+        if nucleus_end - nucleus_start != 2 {
+            return;
+        }
+        let u_syl = self.buf.get(nucleus_start);
+        let o_syl = self.buf.get(nucleus_start + 1);
+        if u_syl.base != b'u' || o_syl.base != b'o' {
+            return;
+        }
+        if u_syl.flags & (F_HORN | F_CIRCUMFLEX) != 0 || o_syl.flags & (F_HORN | F_CIRCUMFLEX) != 0
+        {
+            return;
+        }
+
+        // A tone must already be set on one of the two vowels.
+        let (tone, from_idx) = if u_syl.flags & F_TONE_SET != 0 {
+            (u_syl.tone, nucleus_start)
+        } else if o_syl.flags & F_TONE_SET != 0 {
+            (o_syl.tone, nucleus_start + 1)
+        } else {
+            return;
+        };
+
+        // Move the tone to the o and give it the circumflex
+        // ("uố", "uồ", "uộ" — thuốc, muốn, nguồn, thuộc, buồng).
+        if from_idx != nucleus_start + 1 {
+            let s = self.buf.get_mut(from_idx);
+            s.flags &= !F_TONE_SET;
+            s.tone = 0;
+            s.recompute_out();
+        }
+        let s = self.buf.get_mut(nucleus_start + 1);
+        s.flags |= F_CIRCUMFLEX | F_TONE_SET;
+        s.tone = tone;
+        s.recompute_out();
+    }
+
+    /// -ech rhyme resolution: plain [e] + coda "ch" + tone → the e takes the
+    /// circumflex and keeps the tone. The -ech rhyme is always written "êch"
+    /// when toned ("lechj" → "lệch", "kechs" → ếch-style — sắc/nặng only,
+    /// 20+ words in the 22k list); toneless "ech" is a transient, and
+    /// huyền/hỏi/ngã with -ch do not occur (the tone-coda rule rejects them).
+    #[inline]
+    fn resolve_ech_rhyme_tone(&mut self) {
+        let n = self.buf.len();
+        if n < 3 {
+            return; // Need at least e + ch (onset optional).
+        }
+
+        let (_, nucleus_start, nucleus_end, coda_start) = self.partition_syllable();
+
+        if coda_start >= n || nucleus_end - nucleus_start != 1 || nucleus_start + 1 != coda_start {
+            return;
+        }
+        let e_syl = self.buf.get(nucleus_start);
+        if e_syl.base != b'e' || e_syl.flags & (F_HORN | F_CIRCUMFLEX) != 0 {
+            return;
+        }
+        // Coda must be exactly "ch".
+        if n - coda_start != 2
+            || self.buf.get(coda_start).base != b'c'
+            || self.buf.get(coda_start + 1).base != b'h'
+        {
+            return;
+        }
+        // Only resolve when a tone is present (sắc/nặng pass the tone-coda
+        // rule; other tones fall through to passthrough untouched).
+        if e_syl.flags & F_TONE_SET == 0 {
+            return;
+        }
+        let s = self.buf.get_mut(nucleus_start);
+        s.flags |= F_CIRCUMFLEX;
+        s.recompute_out();
     }
 }
