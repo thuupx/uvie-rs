@@ -108,21 +108,9 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
         tone_idx: 0,
     }, // âo (nấo etc.)
     NucleusEntry {
-        seq: &['ă', 'y'],
-        tone_idx: 0,
-    }, // ăy (rare)
-    NucleusEntry {
-        seq: &['ă', 'u'],
-        tone_idx: 0,
-    }, // ău (tầu - boat)
-    NucleusEntry {
         seq: &['o', 'ă'],
         tone_idx: 1,
     }, // oă (hoăng, loăng quăng)
-    NucleusEntry {
-        seq: &['ê', 'o'],
-        tone_idx: 0,
-    }, // êo (rare)
     NucleusEntry {
         seq: &['ê', 'u'],
         tone_idx: 0,
@@ -132,17 +120,9 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
         tone_idx: 0,
     }, // ôi
     NucleusEntry {
-        seq: &['ô', 'u'],
-        tone_idx: 0,
-    }, // ôu (rare)
-    NucleusEntry {
         seq: &['ơ', 'i'],
         tone_idx: 0,
     }, // ơi
-    NucleusEntry {
-        seq: &['ơ', 'u'],
-        tone_idx: 0,
-    }, // ơu (rare)
     NucleusEntry {
         seq: &['ư', 'a'],
         tone_idx: 0,
@@ -151,10 +131,6 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
         seq: &['ư', 'i'],
         tone_idx: 0,
     }, // ưi (gửi → tone on ư)
-    NucleusEntry {
-        seq: &['ư', 'o'],
-        tone_idx: 0,
-    }, // ưo (rare)
     NucleusEntry {
         seq: &['ư', 'u'],
         tone_idx: 0,
@@ -176,10 +152,6 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
         seq: &['i', 'ê'],
         tone_idx: 1,
     }, // iê / yê (tiến → tone on ê)
-    NucleusEntry {
-        seq: &['i', 'o'],
-        tone_idx: 0,
-    }, // io (rare)
     NucleusEntry {
         seq: &['y', 'ê'],
         tone_idx: 1,

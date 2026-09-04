@@ -1074,7 +1074,7 @@ fn comprehensive_vietnamese_phonotactics() {
         ("hoaw", "hoă"),
         ("hoaj", "hoạ"),
         ("hoaws", "hoắ"),
-        ("auw", "ău"),
+        ("auw", "au"), // "ău" is not a legal rime — w consumed, passthrough
         ("iuw", "iuw"),
         ("uuw", "ưu"),
         ("uww", "uw"),

@@ -70,6 +70,33 @@ Trade-off: ~40% regression on short benchmarks (~130ns/keystroke) due to
 added `is_valid_vietnamese()` checks. Sentence/backspace benchmarks
 remain faster than original baseline.
 
+### Accuracy Improvement (2026-09): orthography-gated V-C-V + rime table cleanup
+Two changes grounded in the standard Quốc Ngữ rime inventory (Vietnamese
+orthography; "Các vần trong tiếng Việt"):
+
+1. **Hiatus rule in the V-C-V split** (`src/diff/core.rs`). A syllable
+   boundary inside a written token must fall on a consonant (the next
+   syllable's onset) — vowel-to-vowel hiatus never occurs inside a
+   Vietnamese token; any V-V sequence must be a single nucleus. The split
+   now only fires when `find_split_point` returns an index before the new
+   vowel (`split < len - 1`). Fixes `ressearch`→`rếarch` (the split
+   resurrected the double-cancelled sắc as a committed `rế` syllable) and
+   `theeo`→`thêo`. Consonant splits (`neebo`→`nêbo`, `toocaa`→`tôcâ`) are
+   unchanged.
+
+2. **Removed non-standard "(rare)" nuclei** (`src/tables/nucleus.rs`):
+   `êo`, `ôu`, `ơu`, `ưo`, `io`, `ău`, `ăy` — zero attestations in the 22k
+   word list and absent from the standard rime whitelist. These let English
+   input render as fake Vietnamese (`theeo`→`thêo`, `keeo`→`kêo`,
+   `tawuf`→`tầu`). Transient states (`uu`→ưu, `uo`→ươ precursor, `âo` for
+   `naaos`→nấo, `oo` engine extension) are kept. Note: standard Telex maps
+   `auw`→`âu` (UniKey-compatible); the engine currently consumes the `w`
+   and passes through `au` — a possible future compatibility improvement.
+
+Tests: `tests/orthography_tests.rs` (hiatus, passthrough, locked V-C-V).
+Updated locked expectations in `bugfix_tests.rs` (`keeo`→passthrough),
+`vcv_tests.rs` (`auw`→`au`), `word_boundary_tests.rs` (`dauw`→`dau`).
+
 ### Accuracy Improvement (2026-08)
 Onset↔nucleus distribution check (`onset_nucleus_compatible` in
 `src/tables/onset.rs`). Vietnamese has a hard complementary distribution

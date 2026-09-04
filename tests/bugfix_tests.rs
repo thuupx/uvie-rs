@@ -36,30 +36,36 @@ fn test_uuw_in_word() {
 
 #[test]
 fn test_nucleus_au_breve() {
-    // "ău" nucleus: tawus -> tằu (boat with sắc tone)
-    // tawuf would produce tầu (huyền tone) - depends on tone key
+    // "ău" is NOT a standard Vietnamese rime (the [ău] sound is written "au",
+    // e.g. "sau", "lau"; "tầu" is a nonstandard variant of "tàu"). The breve
+    // cannot apply here, so the w is restored and the word passes through.
     let mut e = UltraFastViEngine::new();
     let result = type_seq(&mut e, "tawuf");
-    // Document actual behavior - tone placement on ău nucleus
-    assert!(
-        result == "tầu" || result == "tằu" || result == "tăuf",
-        "tawuf should produce tầu or similar, got {}",
-        result
+    assert_eq!(
+        result, "tawuf",
+        "ău is not a legal rime; passthrough expected"
     );
 }
 
 #[test]
 fn test_nucleus_io() {
-    // "io" nucleus (rare): kio -> kio
+    // "io" is not a legal Vietnamese nucleus (no word in the 22k list uses it),
+    // so "kio" passes through unchanged.
     let mut e = UltraFastViEngine::new();
     assert_eq!(type_seq(&mut e, "kio"), "kio", "kio should produce kio");
 }
 
 #[test]
 fn test_nucleus_eo_circumflex() {
-    // "êo" nucleus (rare): k + ee + o -> kêo
+    // "êo" is NOT a standard Vietnamese rime (ê only combines with u: "êu").
+    // "keeo" must pass through raw instead of rendering the fake word "kêo".
+    // This also covers "theeo" → "theeo" (not "thêo").
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_seq(&mut e, "keeo"), "kêo", "keeo should produce kêo");
+    assert_eq!(
+        type_seq(&mut e, "keeo"),
+        "keeo",
+        "êo is not a legal rime; passthrough expected"
+    );
 }
 
 // ===== feed_diff parity tests =====

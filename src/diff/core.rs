@@ -174,7 +174,15 @@ impl UltraFastViEngine {
             && self.diff.last_valid_raw_len < self.diff.raw_chars.len()
         {
             let split = Self::find_split_point(&self.diff.raw_chars);
-            if split > 0 {
+            // Vietnamese orthography rule: a syllable boundary inside a written
+            // token must fall on a consonant (the next syllable's onset). A
+            // split directly after a nucleus with no intervening consonant
+            // (vowel-to-vowel hiatus, e.g. "theeo" → "thê"|"o") never occurs
+            // in Vietnamese — any V-V sequence inside a token must be a single
+            // nucleus. Hiatus marks a non-Vietnamese token, so keep composing
+            // raw instead of committing a syllable pair (fixes "theeo" →
+            // "thêo" and "ressearch" → "rếarch").
+            if split > 0 && split < self.diff.raw_chars.len() - 1 {
                 let committed_raw: CharVec<24> =
                     self.diff.raw_chars[..split].iter().copied().collect();
                 let new_syl_raw: CharVec<24> =

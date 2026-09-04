@@ -45,7 +45,10 @@ mod word_boundary_punctuation_tests {
     #[test]
     fn dash_boundary() {
         let mut e = UltraFastViEngine::new();
-        assert_eq!(type_diff(&mut e, "tieengs-dauw"), "tiếng-dău");
+        // "dauw": "ău" is not a legal rime, so the w is consumed and the
+        // letters pass through as "dau". The point of this test is the dash
+        // acting as a word boundary between "tiếng" and the next word.
+        assert_eq!(type_diff(&mut e, "tieengs-dauw"), "tiếng-dau");
     }
 
     #[test]
