@@ -247,14 +247,19 @@ pub extern "C" fn uvie_engine_commit(
     .unwrap_or(0)
 }
 
-/// Re-enter the most recently committed word with `ch` appended to its raw
-/// keystrokes (LabanKey-style post-commit editing: the user arrows back onto
-/// a committed word and types a tone/modifier key).
+/// Re-enter a previously committed word with `ch` appended to its raw
+/// keystrokes (LabanKey-style post-commit editing: the user arrows back
+/// onto a committed word and types a tone/modifier key).
+/// `caret_back` is the caret distance (screen chars) back to the end of the
+/// newest committed word; it must exactly match a word-end boundary in the
+/// engine's committed-word history (0 = newest word, + rendered_len + 1 per
+/// older word).
 /// Returns backspaces + 1 when handled (suffix written into `out_buf`),
-/// 0 when there is no committed word to edit or `ch` is a word boundary.
+/// 0 when there is no matching boundary or `ch` is a word boundary.
 #[unsafe(no_mangle)]
-pub extern "C" fn uvie_engine_edit_newest(
+pub extern "C" fn uvie_engine_edit_at(
     engine: *mut UvieEngine,
+    caret_back: usize,
     ch: c_char,
     out_buf: *mut c_char,
     out_len: usize,
@@ -267,7 +272,7 @@ pub extern "C" fn uvie_engine_edit_newest(
         let Some(mut e) = lock_engine(engine) else {
             return 0;
         };
-        let Some((backspaces, suffix)) = e.edit_newest_diff(c) else {
+        let Some((backspaces, suffix)) = e.edit_at_caret_diff(caret_back, c) else {
             return 0;
         };
         write_output(suffix, out_buf, out_len);

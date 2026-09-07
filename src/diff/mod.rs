@@ -10,6 +10,7 @@ mod utils;
 pub use state::{ComposingSnapshot, DiffState};
 
 use crate::engine::UltraFastViEngine;
+use state::CommittedWord;
 
 /// Diff-mode input API: minimal-edit instructions for each keystroke.
 pub trait Diffable {
@@ -22,11 +23,15 @@ pub trait Diffable {
     fn committed_text_diff(&self) -> &str;
     fn prev_inner_render_debug(&self) -> &str;
     fn prev_rendered_debug(&self) -> &str;
-    /// Re-enter the most recently committed word with `ch` appended to its
-    /// raw keystrokes, re-render it, and return the minimal edit instructions
-    /// (backspaces, suffix) that transform the on-screen word. Returns None
-    /// when there is no committed word to edit or `ch` is a word boundary.
-    fn edit_newest_diff(&mut self, ch: char) -> Option<(usize, &str)>;
+    /// Re-enter a previously committed word with `ch` appended to its raw
+    /// keystrokes, re-render it, and return the minimal edit instructions
+    /// (backspaces, suffix) that transform the on-screen word. `caret_back`
+    /// is the host's caret distance (screen chars) back to the end of the
+    /// newest committed word; it must exactly match a word-end boundary in
+    /// the ring (0 = newest word, then + rendered_len + 1 per older word).
+    /// Returns None when there is no matching boundary, no committed word,
+    /// `ch` is a word boundary, or the engine is composing.
+    fn edit_at_caret_diff(&mut self, caret_back: usize, ch: char) -> Option<(usize, &str)>;
 }
 
 impl Diffable for UltraFastViEngine {
@@ -322,24 +327,52 @@ impl Diffable for UltraFastViEngine {
         (0, &self.diff.diff_suffix)
     }
 
-    fn edit_newest_diff(&mut self, ch: char) -> Option<(usize, &str)> {
+    fn edit_at_caret_diff(&mut self, caret_back: usize, ch: char) -> Option<(usize, &str)> {
         // Word boundaries are commits, not edits — the host routes them to
         // commit_diff. Editing also only applies when idle (nothing composing).
         if Self::is_word_boundary(ch) || self.is_composing_diff() {
             return None;
         }
-        // Extended raw must fit the fixed keystroke buffer.
         let len = self.diff.edit_history_len;
         if len == 0 {
             return None;
         }
-        let newest = (self.diff.edit_history_start + len - 1) % self.diff.edit_history.len();
-        if self.diff.edit_history[newest].as_ref()?.raw.is_full() {
+        // Walk the ring from the newest word backward, accumulating the
+        // on-screen distance to each word-end boundary: boundary 0 = the
+        // newest word's end (the anchor), then + rendered_len + 1 boundary
+        // char (space/Enter/punct) per older word. The host's caretBack is
+        // the ground truth; if it doesn't exactly match a boundary (double
+        // spaces, pastes, unseen caret jumps), no edit fires — passthrough.
+        let ring_len = self.diff.edit_history.len();
+        let mut boundary = 0usize;
+        let mut target_step = None;
+        for step in 0..len {
+            if caret_back == boundary {
+                target_step = Some(step);
+                break;
+            }
+            let idx = (self.diff.edit_history_start + len - 1 - step) % ring_len;
+            let entry = self.diff.edit_history[idx].as_ref()?;
+            boundary += entry.rendered.chars().count() + 1;
+        }
+        let step = target_step?;
+        let target_idx = (self.diff.edit_history_start + len - 1 - step) % ring_len;
+        // Extended raw must fit the fixed keystroke buffer.
+        if self.diff.edit_history[target_idx].as_ref()?.raw.is_full() {
             return None;
         }
-        // Take the newest committed word out of the ring: it is being
-        // re-entered as the composing word and will be re-recorded on commit.
-        let entry = self.diff.edit_history[newest].take()?;
+        // Take the target word out of the ring, plus every NEWER entry:
+        // they sit after the caret on screen, so their anchor geometry is
+        // stale once the target is re-entered as the composing word. The
+        // older entries stay (they are still on screen before the caret).
+        let entry = self.diff.edit_history[target_idx].take()?;
+        let mut older: [Option<CommittedWord>; 8] = [const { None }; 8];
+        for i in 0..len - 1 - step {
+            let idx = (self.diff.edit_history_start + i) % ring_len;
+            older[i] = self.diff.edit_history[idx].take();
+        }
+        self.diff.edit_history_start = 0;
+        self.diff.edit_history_len = 0;
 
         // Re-render the extended raw word from scratch through the live
         // pipeline (feed_diff), so composing state, V-C-V splits, English
@@ -349,6 +382,12 @@ impl Diffable for UltraFastViEngine {
         self.reset_diff();
         for &c in new_raw.iter() {
             let _ = self.feed_diff(c);
+        }
+
+        // Restore the older committed words (they are still on screen, left
+        // of the edited word, and remain editable).
+        for w in older.into_iter().flatten() {
+            self.diff.push_committed(w.raw, w.rendered);
         }
 
         // Assemble the new full on-screen word (same math as the commit path).
