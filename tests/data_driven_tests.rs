@@ -7,7 +7,7 @@
 
 mod common;
 
-use uvie::{InputMethod, UltraFastViEngine};
+use uvie::UltraFastViEngine;
 
 /// Type a telex input string (with trailing space to commit) and return the
 /// result. Uses the `feed()` API (same as `type_seq`).
