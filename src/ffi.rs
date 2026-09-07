@@ -247,6 +247,35 @@ pub extern "C" fn uvie_engine_commit(
     .unwrap_or(0)
 }
 
+/// Re-enter the most recently committed word with `ch` appended to its raw
+/// keystrokes (LabanKey-style post-commit editing: the user arrows back onto
+/// a committed word and types a tone/modifier key).
+/// Returns backspaces + 1 when handled (suffix written into `out_buf`),
+/// 0 when there is no committed word to edit or `ch` is a word boundary.
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_edit_newest(
+    engine: *mut UvieEngine,
+    ch: c_char,
+    out_buf: *mut c_char,
+    out_len: usize,
+) -> usize {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || out_len == 0 {
+            return 0;
+        }
+        let c = ch as u8 as char;
+        let Some(mut e) = lock_engine(engine) else {
+            return 0;
+        };
+        let Some((backspaces, suffix)) = e.edit_newest_diff(c) else {
+            return 0;
+        };
+        write_output(suffix, out_buf, out_len);
+        backspaces + 1
+    })
+    .unwrap_or(0)
+}
+
 /// Reset all engine state (composing + committed + diff tracking).
 #[unsafe(no_mangle)]
 pub extern "C" fn uvie_engine_reset(engine: *mut UvieEngine) {

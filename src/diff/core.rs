@@ -31,6 +31,12 @@ impl UltraFastViEngine {
                 }
                 let _ = target.push(ch);
 
+                // Record the committed word for post-commit editing: on
+                // screen it is the raw English word.
+                let entry_raw = self.diff.word_raw.clone();
+                let entry_rendered = target.clone();
+                self.diff.push_committed(entry_raw, entry_rendered);
+
                 // Clear all state.
                 self.buf.clear();
                 self.raw_len = 0;
@@ -41,6 +47,14 @@ impl UltraFastViEngine {
                 let (bs, _) = Self::diff_into(&full_screen, &target, &mut self.diff.diff_suffix);
                 return (bs, &self.diff.diff_suffix);
             }
+
+            // Record the committed word for post-commit editing: raw
+            // keystrokes + the exact text on screen.
+            let entry_raw = self.diff.word_raw.clone();
+            let mut entry_rendered = crate::buffers::new_out_buffer();
+            let _ = entry_rendered.push_str(&self.diff.diff_committed);
+            let _ = entry_rendered.push_str(&self.diff.prev_rendered);
+            self.diff.push_committed(entry_raw, entry_rendered);
 
             self.buf.clear();
             self.raw_len = 0;
