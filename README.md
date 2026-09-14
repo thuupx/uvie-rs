@@ -86,17 +86,25 @@ See the [release workflow](.github/workflows/release.yml) for build details.
 
 ## Benchmark
 
-Apple Silicon (`cargo bench`), comparison against the `vi` crate:
+Scenario-based criterion suite (`cargo bench`), Apple Silicon. One operation
+= one natural typing unit (a word, a sentence, or a type+delete cycle), and
+criterion's `Throughput::Elements` reports the keystroke count, so
+per-keystroke cost is comparable across scenarios and across releases.
 
-| Case | Telex speedup (vi / uvie) | VNI speedup (vi / uvie) |
-| ------ | --------------------------: | ------------------------: |
-| simple | ~5.8x | ~5.7x |
-| sentence | ~6.1x | ~5.3x |
-| mixed | ~15.8x | ~10.7x |
-| cluster | ~6.7x | ~6.7x |
-| ui | ~5.8x | ~2.8x |
+| Scenario | Input | Time/op | Keys |
+| -------- | ----- | -------: | ---: |
+| Compound Word | `nghieengs` → nghiếng | ~1.05 µs | 9 |
+| Random Keystroke Sequence | 32 seeded-random letters | ~4.03 µs | 33 |
+| Worst-case Deep Syllable | `dduwowcj` → được | ~922 ns | 9 |
+| Mixed Typing (Viet + English) | 107-char sentence | ~11.3 µs | 107 |
+| Rapid Backspace Burst | type được + full backspace walk | ~1.09 µs | 16 |
+| English Passthrough | `ghost` (phonotactic rejection) | ~347 ns | 6 |
+| Feed Benchmark | legacy non-diff `feed()` API | ~621 ns | 9 |
 
-### Diff API performance (v2.1.0, after optimization rounds)
+All diff scenarios go through `feed_diff` — the API the Swift app drives
+over FFI. The legacy `feed()` case is kept for cross-version comparison.
+
+### Historical: v2.1.0 optimization rounds (previous bench suite)
 
 | Benchmark | Original | v2.1.0 | Improvement |
 |-----------|----------|--------|-------------|

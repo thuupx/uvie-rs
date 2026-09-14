@@ -8,6 +8,18 @@ rtk cargo test --release           # Run all tests (277 tests)
 rtk cargo bench --bench perf -- --warm-up-time 1 --measurement-time 3  # Benchmarks
 ```
 
+### Benchmark suite (scenario-based, 2026-09)
+
+`benches/perf.rs` benchmarks the engine's own APIs only — no `vi` crate
+comparison. One criterion iteration = one natural typing unit; group names
+match the scenario table: `compound_word/nghieengs` (→ nghiếng),
+`random_keystroke_sequence/seeded_32`, `worst_case_deep_syllable/dduwowcj`
+(→ được), `mixed_typing/viet_english` (dict-override words),
+`rapid_backspace_burst/burst` (type + full backspace walk),
+`english_passthrough/ghost`, `feed/legacy`. `Throughput::Elements` reports
+keystrokes so per-keystroke cost is comparable across scenarios.
+
+
 ## Architecture
 
 The engine has two APIs:

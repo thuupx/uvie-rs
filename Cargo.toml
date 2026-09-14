@@ -18,7 +18,6 @@ cbindgen = "0.29"
 
 [dev-dependencies]
 criterion = "0.5"
-vi = "0.8"
 rand = "0.8"
 
 [features]

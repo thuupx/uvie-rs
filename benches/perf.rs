@@ -1,11 +1,31 @@
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+//! Scenario-based benchmarks, following the per-scenario reporting format:
+//!
+//! | Scenario | What it measures |
+//! |----------|------------------|
+//! | Compound Word | deep onset + circumflex nucleus + coda + tone (`nghiengs`) |
+//! | Random Keystroke Sequence | seeded random letters, unpredictable paths |
+//! | Worst-case Deep Syllable | stroke + horn + tone in one syllable (`dduwowcj`) |
+//! | Mixed Typing | Vietnamese Telex + English dict-override words |
+//! | Rapid Backspace Burst | type a word, then backspace the whole word |
+//! | English Passthrough | phonotactically invalid input rendered raw |
+//! | Feed Benchmark | the legacy non-diff `feed()` API |
+//!
+//! One criterion iteration = one natural typing unit (a word, a sentence, or
+//! a type+delete cycle). `Throughput::Elements` reports the keystroke count
+//! so per-keystroke cost is comparable across scenarios. All diff scenarios
+//! go through `feed_diff` — the API the Swift app drives over FFI.
+
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use rand::prelude::*;
+use rand::rngs::StdRng;
 use uvie::diff::Diffable;
 use uvie::{InputMethod, UltraFastViEngine};
-use vi::methods::transform_buffer as vi_transform_buffer;
 
-// ---------------------------------------------------------------------------
-// Helpers — the app uses `feed_diff` (the diff API), not the raw `feed` API.
-// ---------------------------------------------------------------------------
+fn telex_engine() -> UltraFastViEngine {
+    let mut e = UltraFastViEngine::new();
+    e.set_input_method(InputMethod::Telex);
+    e
+}
 
 fn type_seq_diff(engine: &mut UltraFastViEngine, seq: &str) {
     engine.reset_diff();
@@ -14,156 +34,123 @@ fn type_seq_diff(engine: &mut UltraFastViEngine, seq: &str) {
     }
 }
 
-fn type_seq_vi(def: &vi::Definition, out: &mut String, seq: &str) {
-    out.clear();
-    vi_transform_buffer(def, seq.chars(), out);
-    black_box(&out);
+/// Deterministic random keystroke sequence (seeded, generated once).
+fn random_keystrokes(n: usize) -> String {
+    let mut rng = StdRng::seed_from_u64(0x5556_4945);
+    (0..n).map(|_| rng.gen_range(b'a'..=b'z') as char).collect()
 }
 
 // ---------------------------------------------------------------------------
-// Test cases
+// Scenarios
 // ---------------------------------------------------------------------------
 
-const SHORT_WORDS: &[(&str, &str)] = &[
-    ("phoos", "phoos"),
-    ("huows", "huows"),
-    ("nghees", "nghees"),
-    ("ddoans", "ddoans"),
-    ("choas", "choas"),
-    ("tuis", "tuis"),
-    ("quys", "quys"),
-    ("dduwowcj", "dduwowcj"),
-];
-
-const WORKAROUND_WORDS: &[(&str, &str)] = &[
-    ("chuaw", "chuaw"),
-    ("nguoowcj", "nguoowcj"),
-    ("dduwocj", "dduwocj"),
-    ("hieej", "hieej"),
-    ("ngieengx", "ngieengx"),
-    ("khoajch", "khoajch"),
-    ("ddoansj", "ddoansj"),
-    ("uyeer", "uyeer"),
-    ("nhieept", "nhieept"),
-    ("thuyeest", "thuyeest"),
-];
-
-const LONG_SENTENCES: &[(&str, &str)] = &[
-    ("sentence_short", "Tooi ddang gox Tieengs Vieejt "),
-    (
-        "sentence_medium",
-        "Tooi ddang gox Tieengs Vieejt baengs boox gox UVieKey ",
-    ),
-    (
-        "sentence_long",
-        "Tooi ddang gox Tieengs Vieejt baengs boox gox UVieKey vaex noos rraats nhahj vaaf chinhx xacs ",
-    ),
-    (
-        "sentence_mixed",
-        "Hello Tooi ddang gox Tieengs Vieejt, clear free pro ",
-    ),
-    (
-        "sentence_workaround",
-        "Nguyieenx Tuis ddang gox ngieengx ddieeuw nhieept thuyeest ",
-    ),
-];
-
-// ---------------------------------------------------------------------------
-// Benchmarks
-// ---------------------------------------------------------------------------
-
-fn bench_diff_short(c: &mut Criterion) {
-    let mut group = c.benchmark_group("diff_short");
-    for (name, seq) in SHORT_WORDS {
-        group.bench_with_input(BenchmarkId::from_parameter(*name), seq, |b, input| {
-            let mut e = UltraFastViEngine::new();
-            e.set_input_method(InputMethod::Telex);
-            b.iter(|| type_seq_diff(&mut e, input));
-        });
-    }
+/// "nghieengs" → "nghiếng": ngh onset + iê nucleus + ng coda + sắc tone.
+fn bench_compound_word(c: &mut Criterion) {
+    let mut group = c.benchmark_group("compound_word");
+    let seq = "nghieengs ";
+    group.throughput(Throughput::Elements(seq.chars().count() as u64));
+    group.bench_with_input(BenchmarkId::from_parameter("nghieengs"), seq, |b, input| {
+        let mut e = telex_engine();
+        b.iter(|| type_seq_diff(&mut e, input));
+    });
     group.finish();
 }
 
-fn bench_diff_workaround(c: &mut Criterion) {
-    let mut group = c.benchmark_group("diff_workaround");
-    for (name, seq) in WORKAROUND_WORDS {
-        group.bench_with_input(BenchmarkId::from_parameter(*name), seq, |b, input| {
-            let mut e = UltraFastViEngine::new();
-            e.set_input_method(InputMethod::Telex);
-            b.iter(|| type_seq_diff(&mut e, input));
-        });
-    }
+/// 32 random lowercase letters + word-boundary space.
+fn bench_random_keystroke_sequence(c: &mut Criterion) {
+    let mut group = c.benchmark_group("random_keystroke_sequence");
+    let seq: String = random_keystrokes(32) + " ";
+    group.throughput(Throughput::Elements(seq.chars().count() as u64));
+    group.bench_with_input(BenchmarkId::from_parameter("seeded_32"), &seq, |b, input| {
+        let mut e = telex_engine();
+        b.iter(|| type_seq_diff(&mut e, input));
+    });
     group.finish();
 }
 
-fn bench_diff_sentences(c: &mut Criterion) {
-    let mut group = c.benchmark_group("diff_sentences");
-    for (name, seq) in LONG_SENTENCES {
-        group.bench_with_input(BenchmarkId::from_parameter(*name), seq, |b, input| {
-            let mut e = UltraFastViEngine::new();
-            e.set_input_method(InputMethod::Telex);
-            b.iter(|| type_seq_diff(&mut e, input));
-        });
-    }
+/// "dduwowcj" → "được": d-stroke + uơ horn + nặng tone in a single syllable.
+fn bench_worst_case_deep_syllable(c: &mut Criterion) {
+    let mut group = c.benchmark_group("worst_case_deep_syllable");
+    let seq = "dduwowcj ";
+    group.throughput(Throughput::Elements(seq.chars().count() as u64));
+    group.bench_with_input(BenchmarkId::from_parameter("dduwowcj"), seq, |b, input| {
+        let mut e = telex_engine();
+        b.iter(|| type_seq_diff(&mut e, input));
+    });
     group.finish();
 }
 
-fn bench_diff_backspace(c: &mut Criterion) {
-    let mut group = c.benchmark_group("diff_backspace");
-
-    let cases: &[(&str, &str)] = &[
-        ("short", "phoos"),
-        ("medium", "dduwowcj"),
-        ("long", "nguoowcj"),
-        ("workaround", "ngieengx"),
-    ];
-
-    for (name, seq) in cases {
-        group.bench_with_input(BenchmarkId::from_parameter(*name), seq, |b, input| {
-            let mut e = UltraFastViEngine::new();
-            e.set_input_method(InputMethod::Telex);
-            b.iter(|| {
-                type_seq_diff(&mut e, input);
-                let len = input.chars().count();
-                for _ in 0..len {
-                    black_box(e.backspace_diff());
-                }
-            });
-        });
-    }
+/// Vietnamese Telex interleaved with English words that trigger the
+/// dictionary override ("character", "safari", "good", "book") and
+/// phonotactic passthrough.
+fn bench_mixed_typing(c: &mut Criterion) {
+    let mut group = c.benchmark_group("mixed_typing");
+    let seq = "Hello Tooi ddang gox Tieengs Vieejt baengs boox gox UVieKey, \
+               character safari good book clear free ";
+    group.throughput(Throughput::Elements(seq.chars().count() as u64));
+    group.bench_with_input(BenchmarkId::from_parameter("viet_english"), &seq, |b, input| {
+        let mut e = telex_engine();
+        b.iter(|| type_seq_diff(&mut e, input));
+    });
     group.finish();
 }
 
-fn bench_compare_telex(c: &mut Criterion) {
-    let mut group = c.benchmark_group("compare_telex");
-
-    let cases: &[(&str, &str)] = &[
-        ("simple", "phoos"),
-        ("sentence", "Tooi ddang gox Tieengs Vieejt "),
-        ("workaround", "ngieengx"),
-    ];
-
-    for (name, seq) in cases {
-        group.bench_with_input(BenchmarkId::new("uvie", *name), seq, |b, input| {
-            let mut e = UltraFastViEngine::new();
-            e.set_input_method(InputMethod::Telex);
-            b.iter(|| type_seq_diff(&mut e, input));
+/// Type "dduwowcj" → "được", then burst-backspace the whole word.
+fn bench_rapid_backspace_burst(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rapid_backspace_burst");
+    let word = "dduwowcj";
+    group.throughput(Throughput::Elements(word.chars().count() as u64 * 2));
+    group.bench_with_input(BenchmarkId::from_parameter("burst"), word, |b, input| {
+        let mut e = telex_engine();
+        b.iter(|| {
+            for c in input.chars() {
+                black_box(e.feed_diff(c));
+            }
+            for _ in 0..input.chars().count() {
+                black_box(e.backspace_diff());
+            }
         });
+    });
+    group.finish();
+}
 
-        group.bench_with_input(BenchmarkId::new("vi", *name), seq, |b, input| {
-            let mut out = String::new();
-            b.iter(|| type_seq_vi(&vi::TELEX, &mut out, input));
+/// "ghost": gh + o is phonotactically invalid → raw English passthrough.
+fn bench_english_passthrough(c: &mut Criterion) {
+    let mut group = c.benchmark_group("english_passthrough");
+    let seq = "ghost ";
+    group.throughput(Throughput::Elements(seq.chars().count() as u64));
+    group.bench_with_input(BenchmarkId::from_parameter("ghost"), seq, |b, input| {
+        let mut e = telex_engine();
+        b.iter(|| type_seq_diff(&mut e, input));
+    });
+    group.finish();
+}
+
+/// The legacy non-diff `feed()` API (used by benchmarks as `type_seq`).
+fn bench_feed(c: &mut Criterion) {
+    let mut group = c.benchmark_group("feed");
+    let seq = "nghiengs ";
+    group.throughput(Throughput::Elements(seq.chars().count() as u64));
+    group.bench_with_input(BenchmarkId::from_parameter("legacy"), seq, |b, input| {
+        let mut e = telex_engine();
+        b.iter(|| {
+            e.clear();
+            for c in input.chars() {
+                black_box(e.feed(c));
+            }
         });
-    }
+    });
     group.finish();
 }
 
 criterion_group!(
     benches,
-    bench_diff_short,
-    bench_diff_workaround,
-    bench_diff_sentences,
-    bench_diff_backspace,
-    bench_compare_telex,
+    bench_compound_word,
+    bench_random_keystroke_sequence,
+    bench_worst_case_deep_syllable,
+    bench_mixed_typing,
+    bench_rapid_backspace_burst,
+    bench_english_passthrough,
+    bench_feed,
 );
 criterion_main!(benches);
