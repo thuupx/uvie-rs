@@ -159,7 +159,10 @@ fn edit_english_override_word() {
     // "good" is in the English override dictionary: the commit shows "good".
     let mut s = Screen::new(true);
     s.commit_word("good");
-    assert!(s.text.starts_with("good"), "override must show the raw English word");
+    assert!(
+        s.text.starts_with("good"),
+        "override must show the raw English word"
+    );
 
     s.arrow_left();
     let edited = s.edit('s').expect("edit handled");
@@ -179,7 +182,10 @@ fn edit_targets_newest_committed_word() {
     // Editing targets "con" (the newest), not the first word; the earlier
     // text and the commit space are untouched.
     let fresh = type_fresh("con", 's');
-    assert!(edited.ends_with(&fresh), "{edited:?} must end with {fresh:?}");
+    assert!(
+        edited.ends_with(&fresh),
+        "{edited:?} must end with {fresh:?}"
+    );
     assert!(edited.starts_with("vie"), "earlier word must be untouched");
 }
 
@@ -318,5 +324,8 @@ fn ring_eviction_keeps_newest_editable() {
     let edited = s.edit('s').expect("edit handled");
     // The newest committed word is "wo11"; editing it must match fresh typing.
     let fresh = type_fresh("wo11", 's');
-    assert!(edited.ends_with(&fresh), "{edited:?} must end with {fresh:?}");
+    assert!(
+        edited.ends_with(&fresh),
+        "{edited:?} must end with {fresh:?}"
+    );
 }
