@@ -4,7 +4,7 @@
 
 ```bash
 rtk cargo build --release          # Build release
-rtk cargo test --release           # Run all tests (233 tests)
+rtk cargo test --release           # Run all tests (277 tests)
 rtk cargo bench --bench perf -- --warm-up-time 1 --measurement-time 3  # Benchmarks
 ```
 
@@ -16,6 +16,47 @@ The engine has two APIs:
   - Returns `(backspaces, suffix)` — minimal edit instructions
   - Tracks `prev_rendered` (on-screen) vs `out_buf` (engine output)
   - V-C-V split: auto-commits first syllable when a vowel starts a new one
+- **`edit_at_caret_diff(caret_back, ch)`** — post-commit word editing
+  (LabanKey-style; FFI `uvie_engine_edit_at`)
+  - The host tracks the caret distance (`caret_back`, screen chars) back to
+    the end of the newest committed word. The engine walks its committed-word
+    ring (cap 8, each entry = raw + rendered) accumulating
+    `rendered_len + 1` boundary char per older word; the edit fires only
+    when `caret_back` EXACTLY matches a word-end boundary (0 = newest word).
+    Off-boundary carets (mid-word, double spaces, unseen caret jumps)
+    return None — the host feeds the key normally.
+  - On a match: the target word AND all newer entries are popped (their
+    anchor geometry is stale once the target is re-entered); older entries
+    survive and stay editable. The extended raw is re-rendered from scratch
+    through the live pipeline (`reset_diff()` + `feed_diff` replay —
+    rebuilding composing state, V-C-V splits, the English override and the
+    snapshot stack exactly as fresh typing would), then diffs
+    old-rendered → new render.
+  - After a successful edit the engine is COMPOSING the edited word, so
+    backspace walks it back like normal composing and the next space
+    re-records it. The host re-anchors its caret offset to 0.
+  - Cost: zero on the per-keystroke hot path; the ring push is two small
+    buffer copies once per space. The scratch replay only runs on edits.
+- **`edit_newest_diff(ch)`** — post-commit word editing (LabanKey-style;
+  added 2026-09, used by the Swift app via `uvie_engine_edit_newest`)
+  - On every `commit_diff()` the word is recorded into a small ring in
+    `DiffState` (`edit_history`, capacity 8: `raw` keystrokes + `rendered`
+    on-screen text). Pushed AFTER the state clears — `DiffState::clear()`
+    wipes the ring, so capture-then-push ordering matters.
+  - `edit_newest_diff(ch)` pops the newest entry, appends `ch` to its raw,
+    re-renders the extended word from scratch through the live pipeline
+    (`reset_diff()` + `feed_diff` replay — this rebuilds composing state,
+    V-C-V splits, the English override and the snapshot stack exactly as if
+    the extended word had just been typed), then diffs old-rendered → new
+    render and returns the `(backspaces, suffix)` instructions.
+  - Returns `None` when the ring is empty, the engine is composing, `ch` is
+    a word boundary, or the extended raw would overflow 24 chars — the host
+    then feeds the key normally.
+  - After a successful edit the engine is COMPOSING the edited word (the
+    replay pushed per-keystroke snapshots), so backspace walks it back like
+    normal composing and the next space re-records it.
+  - Cost: zero on the per-keystroke hot path; the ring push is two small
+    buffer copies once per space. The scratch replay only runs on edits.
 
 ## Performance Hotspots (measured 2026-07-03)
 

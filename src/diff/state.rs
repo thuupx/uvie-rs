@@ -21,6 +21,18 @@ pub struct ComposingSnapshot {
     pub last_valid_out: OutBuffer,
 }
 
+/// A committed word kept for post-commit editing (arrow-back onto the word
+/// and typing a modifier/tone key re-renders it in place — LabanKey-style).
+/// All fields are stack-allocated (no heap beyond the OutBuffer's inline
+/// storage on no_std / String on std).
+#[derive(Clone)]
+pub struct CommittedWord {
+    /// Raw keystrokes of the committed word (lossless, case-preserved).
+    pub raw: CharVec<24>,
+    /// Rendered text that is on screen for this word.
+    pub rendered: OutBuffer,
+}
+
 /// Diff-mode state: tracks what's on screen vs what the engine produced.
 pub struct DiffState {
     /// Raw keystroke buffer for feed_diff (chars, not bytes; needed for V-C-V split).
@@ -61,6 +73,15 @@ pub struct DiffState {
     /// instead of O(n) replay. Cleared on word boundary, commit, V-C-V split.
     pub snapshots: [Option<ComposingSnapshot>; 24],
     pub snapshot_count: usize,
+    /// Committed-word ring (oldest → newest), for post-commit editing.
+    /// Only the newest entry is used by `edit_newest_diff`; the rest are
+    /// kept for future multi-word-back editing. Cleared on commit-adjacent
+    /// invalidation paths (reset, full clear) and by `pop_newest_committed`.
+    pub edit_history: [Option<CommittedWord>; 8],
+    /// Index of the oldest entry in the ring.
+    pub edit_history_start: usize,
+    /// Number of live entries in the ring.
+    pub edit_history_len: usize,
 }
 
 impl Default for DiffState {
@@ -86,6 +107,9 @@ impl DiffState {
             scratch_display: OutBuffer::new(),
             snapshots: [const { None }; 24],
             snapshot_count: 0,
+            edit_history: [const { None }; 8],
+            edit_history_start: 0,
+            edit_history_len: 0,
         }
     }
 
@@ -107,6 +131,34 @@ impl DiffState {
             *s = None;
         }
         self.snapshot_count = 0;
+        // Clear committed-word history
+        for w in &mut self.edit_history {
+            *w = None;
+        }
+        self.edit_history_start = 0;
+        self.edit_history_len = 0;
+    }
+
+    /// Push a committed word onto the ring (oldest evicted when full).
+    pub fn push_committed(&mut self, raw: CharVec<24>, rendered: OutBuffer) {
+        if self.edit_history_len == self.edit_history.len() {
+            self.edit_history[self.edit_history_start] = None;
+            self.edit_history_start = (self.edit_history_start + 1) % self.edit_history.len();
+            self.edit_history_len -= 1;
+        }
+        let idx = (self.edit_history_start + self.edit_history_len) % self.edit_history.len();
+        self.edit_history[idx] = Some(CommittedWord { raw, rendered });
+        self.edit_history_len += 1;
+    }
+
+    /// Pop and return the newest committed word, or None if the ring is empty.
+    pub fn pop_newest_committed(&mut self) -> Option<CommittedWord> {
+        if self.edit_history_len == 0 {
+            return None;
+        }
+        let idx = (self.edit_history_start + self.edit_history_len - 1) % self.edit_history.len();
+        self.edit_history_len -= 1;
+        self.edit_history[idx].take()
     }
 
     /// Push a snapshot of the current composing state.

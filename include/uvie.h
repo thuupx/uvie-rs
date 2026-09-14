@@ -55,6 +55,23 @@ size_t uvie_engine_backspace(UvieEngine *engine, char *out_buf, size_t out_len);
 size_t uvie_engine_commit(UvieEngine *engine, char *out_buf, size_t out_len);
 
 /**
+ * Re-enter a previously committed word with `ch` appended to its raw
+ * keystrokes (LabanKey-style post-commit editing: the user arrows back
+ * onto a committed word and types a tone/modifier key).
+ * `caret_back` is the caret distance (screen chars) back to the end of the
+ * newest committed word; it must exactly match a word-end boundary in the
+ * engine's committed-word history (0 = newest word, + rendered_len + 1 per
+ * older word).
+ * Returns backspaces + 1 when handled (suffix written into `out_buf`),
+ * 0 when there is no matching boundary or `ch` is a word boundary.
+ */
+size_t uvie_engine_edit_at(UvieEngine *engine,
+                           size_t caret_back,
+                           char ch,
+                           char *out_buf,
+                           size_t out_len);
+
+/**
  * Reset all engine state (composing + committed + diff tracking).
  */
 void uvie_engine_reset(UvieEngine *engine);
