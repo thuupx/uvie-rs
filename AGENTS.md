@@ -97,6 +97,46 @@ keystroke by design, while uvie runs full validation + render + diff per
 key. Further gains need structural work (incremental partition, render
 caching), not micro-optimization.
 
+### Performance round 6 (2026-09, branchless/bitmask pass)
+
+Third profile-guided pass, focused on branch elimination and fixed-size
+moves. Two experiments were tried and REVERTED after profiling showed them
+slower — the early-exit scans beat full-mask passes at these sizes:
+
+- REVERTED: branchless vowel-bitmask `compute_partition` (full n-entry mask
+  pass lost to the early-exit onset/nucleus scan: 111 → 175 samples).
+- REVERTED: SWAR (u64-chunk) prefix compare in `diff_into` — the
+  `try_into` overhead beat the byte loop that LLVM already handles well
+  (163 → 192 samples).
+
+Kept changes:
+
+1. **`copy_active_from` fixed-32-byte fast path**: snapshot OutBuffer copies
+   ≤ 32 bytes (the common case) become a single unrolled 4×u64 move — no
+   loop, no call. 169 → 52 profile samples.
+2. (from round 5, retained) `is_raw_passthrough_slice` byte-based,
+   `push_str` chunked inline copy.
+
+Results (cumulative vs the pre-round-4 baseline):
+
+| Scenario | Baseline | Now | Δ |
+|---|---|---|---|
+| compound_word/nghieengs | 1046 ns | 547 ns | **-48%** |
+| worst_case_deep_syllable/dduwowcj | 924 ns | 476 ns | **-48%** |
+| mixed_typing/viet_english | 10.24 µs | 6.39 µs | **-38%** |
+| rapid_backspace_burst/burst | 1055 ns | 630 ns | **-40%** |
+| random_keystroke_sequence/seeded_32 | 4.19 µs | 2.89 µs | **-31%** |
+| english_passthrough/ghost | 330 ns | 251 ns | **-24%** |
+| feed/legacy | 603 ns | 232 ns | **-62%** |
+
+vs `bamboo-core` 0.3.24 (same machine/harness): worst_case_deep_syllable
+(485 vs 572 ns, -15%), backspace_burst (635 vs 972 ns, -35%) and
+mixed_typing (6.53 vs 6.17 µs, near parity) hold or improve; compound_word
+1.6x, random 1.9x, passthrough 1.75x behind. The remaining profile is
+~44% pipeline logic (`feed_diff_core`/`feed_diff`/`render_out_buf`) —
+closing it needs structural work (incremental partition, render caching),
+not micro-optimization.
+
 
 ## Architecture
 

@@ -253,20 +253,26 @@ impl<const N: usize> StackStr<N> {
     ///
     /// Bytes past `src.len` are left untouched — readers are len-bounded, so
     /// stale tail bytes are never observed. Snapshot pushes copy ~len bytes
-    /// instead of the full `[u8; N]` array. Fixed 8-byte chunks keep the move
+    /// instead of the full `[u8; N]` array. Fixed-size chunks keep the move
     /// inlined (no `memmove` call for the tiny payloads seen per keystroke).
     #[inline]
     pub fn copy_active_from(&mut self, src: &Self) {
         let n = src.len;
         self.len = n;
-        let mut k = 0;
-        while k + 8 <= n {
-            self.bytes[k..k + 8].copy_from_slice(&src.bytes[k..k + 8]);
-            k += 8;
-        }
-        while k < n {
-            self.bytes[k] = src.bytes[k];
-            k += 1;
+        if n <= 32 {
+            // Fixed 32-byte copy: 4 unrolled loads/stores, no loop, no call.
+            // Slot tails are stale-tolerant, so over-copying is harmless.
+            self.bytes[..32].copy_from_slice(&src.bytes[..32]);
+        } else {
+            let mut k = 0usize;
+            while k + 8 <= n {
+                self.bytes[k..k + 8].copy_from_slice(&src.bytes[k..k + 8]);
+                k += 8;
+            }
+            while k < n {
+                self.bytes[k] = src.bytes[k];
+                k += 1;
+            }
         }
     }
 }

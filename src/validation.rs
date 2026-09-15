@@ -149,6 +149,10 @@ impl SyllableValidator for UltraFastViEngine {
     }
 
     /// Compute partition from scratch (uncached).
+    ///
+    /// Two early-exiting scans (onset → first vowel, nucleus → first
+    /// consonant). The early breaks win over a full branchless vowel-mask
+    /// pass for typical syllables (short onsets), so this stays a scan.
     #[inline]
     fn compute_partition(&self) -> (usize, usize, usize, usize) {
         let n = self.buf.len();
