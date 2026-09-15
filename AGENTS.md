@@ -10,14 +10,67 @@ rtk cargo bench --bench perf -- --warm-up-time 1 --measurement-time 3  # Benchma
 
 ### Benchmark suite (scenario-based, 2026-09)
 
-`benches/perf.rs` benchmarks the engine's own APIs only — no `vi` crate
-comparison. One criterion iteration = one natural typing unit; group names
-match the scenario table: `compound_word/nghieengs` (→ nghiếng),
-`random_keystroke_sequence/seeded_32`, `worst_case_deep_syllable/dduwowcj`
-(→ được), `mixed_typing/viet_english` (dict-override words),
-`rapid_backspace_burst/burst` (type + full backspace walk),
-`english_passthrough/ghost`, `feed/legacy`. `Throughput::Elements` reports
-keystrokes so per-keystroke cost is comparable across scenarios.
+`benches/perf.rs` — criterion only, no `vi` crate comparison. One criterion
+iteration = one natural typing unit; group names match the scenario table:
+`compound_word/nghieengs` (→ nghiếng), `random_keystroke_sequence/seeded_32`,
+`worst_case_deep_syllable/dduwowcj` (→ được), `mixed_typing/viet_english`
+(dict-override words), `rapid_backspace_burst/burst` (type + full backspace
+walk), `english_passthrough/ghost`, `feed/legacy`, and `compare_bamboo/*` —
+the same scenarios head-to-head against `bamboo-core = "=0.3.24"` (dev-dep,
+pinned; its `process_key_delta` is the `feed_diff` equivalent, same harness
+and inputs). `Throughput::Elements` reports keystrokes so per-keystroke cost
+is comparable across scenarios and releases.
+
+### Performance round 4 (2026-09, profiled against bamboo-core)
+
+Hot-path optimization guided by `sample` profiles of a `feed_diff` loop
+(compound_word scenario). All changes behavior-preserving; 281 tests pass.
+
+1. **`is_english_override` two-letter bucket index** (`src/tables/english.rs`,
+   std-gated OnceLock; plain binary-search fallback under `no_std`): the
+   check runs on every keystroke of every word ≥ 4 chars; the bucket index
+   narrows ~11 probes to 1-2. 327 → ~25 profile samples.
+2. **Version-keyed validity cache** (`cached_validity` in the engine,
+   `src/validation.rs`): `is_valid_vietnamese` runs several times per
+   keystroke (render + tone-candidate checks) against the same buffer state;
+   every SylBuf mutation bumps `version` and the check reads only
+   buf-derived state plus (input_method, relaxed_coda), so
+   `(version, method|relaxed)` fully keys the result. Same raw-pointer write
+   pattern as `cached_partition`. NOTE: any new buf mutation path must bump
+   the version (all SylBuf mutators do).
+3. **Active-portion snapshot copies** (`push_snapshot_active` +
+   `copy_active_from` on SylBuf/CharVec/StackStr): snapshot pushes copy
+   ~len bytes per buffer instead of the full ~800-byte struct; slot reuse
+   keeps it allocation-free. Readers are len-bounded, so stale slot tails
+   are never observed.
+4. **Override-baseline clones gated on the pre-check**: `committed_before`/
+   `prev_before` (2 × 132 B) are cloned only when the override fires; the
+   post-core re-check mirrors the original semantics (the full-buffer path
+   inside feed_diff_core can clear `word_raw` — then the override must not
+   fire even though the pre-check matched).
+5. **`nucleus_tone_target` first-char bitmask index** (const-built): the
+   ~50-entry linear scan narrows to the entries sharing the nucleus's
+   leading vowel. 281 → ~74 profile samples.
+6. **`diff_into` byte-level prefix scan**: common prefix computed on bytes
+   (UTF-8 self-synchronizing; back up to the char boundary on a mid-char
+   mismatch) instead of char iterators; suffix pushed with one `push_str`.
+
+Results (same machine/settings as the baseline lock):
+
+| Scenario | Before | After | Δ |
+|---|---|---|---|
+| compound_word/nghieengs | 1046 ns | 640 ns | **-39%** |
+| worst_case_deep_syllable/dduwowcj | 924 ns | 544 ns | **-39%** |
+| mixed_typing/viet_english | 10.24 µs | 7.27 µs | **-29%** |
+| rapid_backspace_burst/burst | 1055 ns | 698 ns | **-34%** |
+| random_keystroke_sequence/seeded_32 | 4.19 µs | 3.30 µs | **-19%** |
+| english_passthrough/ghost | 330 ns | 279 ns | -16% |
+| feed/legacy | 603 ns | 252 ns | **-58%** |
+
+vs `bamboo-core` 0.3.24 (same machine/harness): worst_case_deep_syllable and
+backspace_burst are now FASTER than bamboo; compound_word 1.7x, mixed 1.2x,
+random 2.2x, passthrough 1.8x still behind (bamboo's JIT-DFA does less work
+per keystroke by design — uvie runs full validation + render + diff per key).
 
 
 ## Architecture

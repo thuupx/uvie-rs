@@ -291,14 +291,77 @@ pub fn nucleus_tone_target(nucleus: &[char]) -> Option<usize> {
     if nucleus.is_empty() {
         return None;
     }
-    // Linear scan; NUCLEUS_TABLE is ~50 entries and nucleus ≤ 3 chars.
-    for entry in NUCLEUS_TABLE {
-        if entry.seq == nucleus {
-            return Some(entry.tone_idx);
+    // First-char bucketed scan: a compile-time bitmask per leading vowel
+    // narrows the ~50-entry table to the handful of entries sharing the
+    // nucleus's first char (this lookup runs on every keystroke via
+    // is_valid_vietnamese and the tone handler).
+    let n0 = nucleus[0];
+    let n1 = nucleus.get(1).copied();
+    let n2 = nucleus.get(2).copied();
+    let len = nucleus.len();
+    let mut mask = NUCLEUS_FIRST_MASKS[first_char_bucket(n0)];
+    while mask != 0 {
+        let entry = &NUCLEUS_TABLE[mask.trailing_zeros() as usize];
+        let seq = entry.seq;
+        mask &= mask - 1;
+        if seq.len() != len {
+            continue;
         }
+        if len >= 2 && seq[1] != n1.unwrap() {
+            continue;
+        }
+        if len == 3 && seq[2] != n2.unwrap() {
+            continue;
+        }
+        return Some(entry.tone_idx);
     }
     None
 }
+
+/// Bucket id for a nucleus's leading vowel (12 distinct first chars).
+const fn first_char_bucket(c: char) -> usize {
+    match c {
+        'a' => 0,
+        'ă' => 1,
+        'â' => 2,
+        'e' => 3,
+        'ê' => 4,
+        'i' => 5,
+        'o' => 6,
+        'ô' => 7,
+        'ơ' => 8,
+        'u' => 9,
+        'ư' => 10,
+        'y' => 11,
+        _ => 12,
+    }
+}
+
+/// Bitmask of `NUCLEUS_TABLE` indices whose entry starts with bucket `b`.
+/// Table length must stay ≤ 64 (const-eval shift panics otherwise).
+const fn build_first_mask(b: usize) -> u64 {
+    let mut mask = 0u64;
+    let mut i = 0;
+    while i < NUCLEUS_TABLE.len() {
+        if first_char_bucket(NUCLEUS_TABLE[i].seq[0]) == b {
+            mask |= 1u64 << i;
+        }
+        i += 1;
+    }
+    mask
+}
+
+const fn build_all_masks() -> [u64; 13] {
+    let mut masks = [0u64; 13];
+    let mut b = 0;
+    while b < 13 {
+        masks[b] = build_first_mask(b);
+        b += 1;
+    }
+    masks
+}
+
+const NUCLEUS_FIRST_MASKS: [u64; 13] = build_all_masks();
 
 /// Returns `true` if `nucleus` is any legal Vietnamese vowel core (ignores
 /// tone-target position). Equivalent to `nucleus_tone_target(n).is_some()`.

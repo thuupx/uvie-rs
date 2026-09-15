@@ -296,6 +296,22 @@ impl SylBuf {
         self.len >= MAX_WORD_LEN
     }
 
+    /// Copy only the active entries (`src.len`) plus `len`/`version` from `src`.
+    ///
+    /// Entries past `src.len` are left untouched — readers are len-bounded,
+    /// so stale tail entries are never observed. Snapshot pushes copy
+    /// `len * size_of::<Syl>()` bytes instead of the full 24-entry array,
+    /// element-wise so the move stays inlined (no `memmove` call).
+    #[inline]
+    pub fn copy_active_from(&mut self, src: &Self) {
+        let n = src.len;
+        for i in 0..n {
+            self.entries[i] = src.entries[i];
+        }
+        self.len = src.len;
+        self.version = src.version;
+    }
+
     /// Append a [`Syl`]. Silently drops the entry if the buffer is full.
     #[inline]
     pub fn push(&mut self, s: Syl) {

@@ -2133,13 +2133,70 @@ fn compare_chars_to_str(chars: &[char], s: &str) -> Ordering {
 /// Returns `true` if `word` (as a char slice) matches a known English word
 /// that should pass through verbatim instead of being transformed.
 ///
-/// Case-insensitive. Uses binary search on a sorted static array.
-/// Only called at word boundaries (space/commit), never per-keystroke.
+/// Case-insensitive. On `std`, a two-letter bucket index narrows the binary
+/// search to the handful of words sharing the first two letters (this check
+/// runs on every keystroke of every word ≥ 4 chars). On `no_std`, falls back
+/// to a plain binary search over the sorted static array.
 #[inline]
 pub fn is_english_override(word: &[char]) -> bool {
-    if word.is_empty() || word.len() < 4 {
+    if word.len() < 4 {
         return false;
     }
+    #[cfg(feature = "std")]
+    {
+        static BUCKETS: std::sync::OnceLock<[[u32; 26]; 26]> = std::sync::OnceLock::new();
+        let table = BUCKETS.get_or_init(build_buckets);
+        let c0 = (word[0].to_ascii_lowercase() as u8).wrapping_sub(b'a') as usize;
+        let c1 = (word[1].to_ascii_lowercase() as u8).wrapping_sub(b'a') as usize;
+        if c0 >= 26 || c1 >= 26 {
+            return false;
+        }
+        let range = table[c0][c1];
+        let mut lo = (range >> 16) as usize;
+        let mut hi = (range & 0xFFFF) as usize;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            match compare_chars_to_str(word, ENGLISH_OVERRIDES[mid]) {
+                Ordering::Equal => return true,
+                Ordering::Less => hi = mid,
+                Ordering::Greater => lo = mid + 1,
+            }
+        }
+        false
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        plain_lookup(word)
+    }
+}
+
+/// Two-letter bucket index: `table[c0][c1]` packs the `[start, end)` range of
+/// `ENGLISH_OVERRIDES` entries starting with that letter pair. Built once;
+/// a zero cell means no dictionary word starts with that letter pair.
+#[cfg(feature = "std")]
+fn build_buckets() -> [[u32; 26]; 26] {
+    let mut table = [[0u32; 26]; 26];
+    let mut i = 0usize;
+    while i < ENGLISH_OVERRIDES.len() {
+        let b = ENGLISH_OVERRIDES[i].as_bytes();
+        let c0 = (b[0].to_ascii_lowercase()).wrapping_sub(b'a') as usize;
+        let c1 = (b[1].to_ascii_lowercase()).wrapping_sub(b'a') as usize;
+        if c0 < 26 && c1 < 26 {
+            let cell = &mut table[c0][c1];
+            if *cell == 0 {
+                *cell = (i as u32) << 16; // bucket start
+            }
+            *cell = (*cell & 0xFFFF_0000) | (i as u32 + 1); // end (exclusive)
+        }
+        i += 1;
+    }
+    table
+}
+
+/// Plain binary search over the full sorted array (no_std path).
+#[inline]
+#[cfg_attr(feature = "std", allow(dead_code))]
+fn plain_lookup(word: &[char]) -> bool {
     let mut lo = 0usize;
     let mut hi = ENGLISH_OVERRIDES.len();
     while lo < hi {

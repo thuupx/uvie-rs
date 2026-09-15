@@ -44,6 +44,13 @@ pub struct UltraFastViEngine {
     /// result is returned; otherwise it's recomputed. This avoids 5-10
     /// redundant O(n) scans per keystroke.
     pub(crate) cached_partition: (u32, (usize, usize, usize, usize)),
+
+    /// Cached `is_valid_vietnamese()` result keyed by
+    /// `(buf.version(), input_method | relaxed_flag)`. The check runs several
+    /// times per keystroke (render + tone-candidate checks) against the same
+    /// buffer state; every buf mutation bumps the version, so a matching key
+    /// is never stale.
+    pub(crate) cached_validity: (u32, u8, bool),
 }
 
 impl UltraFastViEngine {
@@ -66,6 +73,7 @@ impl UltraFastViEngine {
             syl_structure: SylStructure::new(),
             diff: DiffState::new(),
             cached_partition: (0, (0, 0, 0, 0)),
+            cached_validity: (u32::MAX, 0xFF, false),
         }
     }
 

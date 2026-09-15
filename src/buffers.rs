@@ -68,6 +68,28 @@ impl<const N: usize> CharVec<N> {
         }
     }
 
+    /// Copy only the active entries (`src.len`) from `src`.
+    ///
+    /// Bytes past `src.len` are left untouched — readers are len-bounded, so
+    /// stale tail bytes are never observed. Snapshot pushes copy ~len bytes
+    /// instead of the full `[char; N]` array. Copied in fixed 8-byte chunks
+    /// so LLVM inlines the move (a `copy_from_slice` on a runtime length
+    /// emits a `memmove` call whose overhead dominates for tiny payloads).
+    #[inline]
+    pub fn copy_active_from(&mut self, src: &Self) {
+        let n = src.len;
+        self.len = n;
+        let mut k = 0;
+        while k + 8 <= n {
+            self.data[k..k + 8].copy_from_slice(&src.data[k..k + 8]);
+            k += 8;
+        }
+        while k < n {
+            self.data[k] = src.data[k];
+            k += 1;
+        }
+    }
+
     #[inline]
     pub fn swap(&mut self, a: usize, b: usize) {
         self.data.swap(a, b);
@@ -213,6 +235,27 @@ impl<const N: usize> StackStr<N> {
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes[..self.len]
+    }
+
+    /// Copy only the active bytes (`src.len`) from `src`.
+    ///
+    /// Bytes past `src.len` are left untouched — readers are len-bounded, so
+    /// stale tail bytes are never observed. Snapshot pushes copy ~len bytes
+    /// instead of the full `[u8; N]` array. Fixed 8-byte chunks keep the move
+    /// inlined (no `memmove` call for the tiny payloads seen per keystroke).
+    #[inline]
+    pub fn copy_active_from(&mut self, src: &Self) {
+        let n = src.len;
+        self.len = n;
+        let mut k = 0;
+        while k + 8 <= n {
+            self.bytes[k..k + 8].copy_from_slice(&src.bytes[k..k + 8]);
+            k += 8;
+        }
+        while k < n {
+            self.bytes[k] = src.bytes[k];
+            k += 1;
+        }
     }
 }
 

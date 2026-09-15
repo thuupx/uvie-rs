@@ -21,6 +21,37 @@ pub struct ComposingSnapshot {
     pub last_valid_out: OutBuffer,
 }
 
+impl ComposingSnapshot {
+    /// Copy only the active portions of the live state into this snapshot.
+    ///
+    /// Buffers are copied up to their live length (readers are len-bounded),
+    /// so a snapshot push moves ~len bytes instead of the full ~800-byte
+    /// fixed-size struct. Slot reuse keeps this allocation-free.
+    #[inline]
+    fn copy_active_from(
+        &mut self,
+        buf: &SylBuf,
+        raw_len: usize,
+        raw_chars: &CharVec<24>,
+        key_log: &CharVec<24>,
+        prev_rendered: &OutBuffer,
+        prev_inner_render: &OutBuffer,
+        last_valid_raw_len: usize,
+        last_valid_coda_start: usize,
+        last_valid_out: &OutBuffer,
+    ) {
+        self.buf.copy_active_from(buf);
+        self.raw_len = raw_len;
+        self.raw_chars.copy_active_from(raw_chars);
+        self.key_log.copy_active_from(key_log);
+        self.prev_rendered.copy_active_from(prev_rendered);
+        self.prev_inner_render.copy_active_from(prev_inner_render);
+        self.last_valid_raw_len = last_valid_raw_len;
+        self.last_valid_coda_start = last_valid_coda_start;
+        self.last_valid_out.copy_active_from(last_valid_out);
+    }
+}
+
 /// A committed word kept for post-commit editing (arrow-back onto the word
 /// and typing a modifier/tone key re-renders it in place — LabanKey-style).
 /// All fields are stack-allocated (no heap beyond the OutBuffer's inline
@@ -169,6 +200,44 @@ impl DiffState {
             self.snapshots[self.snapshot_count] = Some(snap);
             self.snapshot_count += 1;
         }
+    }
+
+    /// Push a snapshot captured from the live state, copying only the active
+    /// portions of each buffer (the fixed-size tails stay stale — readers are
+    /// len-bounded). Reuses the slot's existing storage, so a push moves
+    /// ~len bytes per buffer instead of the full ~800-byte struct.
+    #[inline]
+    pub fn push_snapshot_active(&mut self, buf: &SylBuf, raw_len: usize) {
+        if self.snapshot_count >= 24 {
+            return;
+        }
+        let slot = &mut self.snapshots[self.snapshot_count];
+        if slot.is_none() {
+            *slot = Some(ComposingSnapshot {
+                buf: SylBuf::new(),
+                raw_len: 0,
+                raw_chars: CharVec::new(),
+                key_log: CharVec::new(),
+                prev_rendered: OutBuffer::new(),
+                prev_inner_render: OutBuffer::new(),
+                last_valid_raw_len: 0,
+                last_valid_coda_start: 0,
+                last_valid_out: OutBuffer::new(),
+            });
+        }
+        let s = slot.as_mut().unwrap();
+        s.copy_active_from(
+            buf,
+            raw_len,
+            &self.raw_chars,
+            &self.key_log,
+            &self.prev_rendered,
+            &self.prev_inner_render,
+            self.last_valid_raw_len,
+            self.last_valid_coda_start,
+            &self.last_valid_out,
+        );
+        self.snapshot_count += 1;
     }
 
     /// Pop and return the last snapshot, or None if empty.

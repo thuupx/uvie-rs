@@ -48,17 +48,9 @@ impl Diffable for UltraFastViEngine {
 
         // Push snapshot of state BEFORE this keystroke (for O(1) backspace).
         // This captures the state that backspace should restore to.
-        self.diff.push_snapshot(ComposingSnapshot {
-            buf: self.buf.clone(),
-            raw_len: self.raw_len,
-            raw_chars: self.diff.raw_chars.clone(),
-            key_log: self.diff.key_log.clone(),
-            prev_rendered: self.diff.prev_rendered.clone(),
-            prev_inner_render: self.diff.prev_inner_render.clone(),
-            last_valid_raw_len: self.diff.last_valid_raw_len,
-            last_valid_coda_start: self.diff.last_valid_coda_start,
-            last_valid_out: self.diff.last_valid_out.clone(),
-        });
+        // Only the active portions of each buffer are copied — the fixed-size
+        // array tails stay stale in the slot (readers are len-bounded).
+        self.diff.push_snapshot_active(&self.buf, self.raw_len);
 
         // Append to key_log and word_raw, then run the core pipeline.
         let _ = self.diff.key_log.try_push(ch);
@@ -67,16 +59,9 @@ impl Diffable for UltraFastViEngine {
         // could possibly fire (word_raw >= 4 chars, the minimum dict word).
         // This avoids 256 bytes of clones on the common path.
         let dict_eligible = self.diff.word_raw.len() >= 4;
-        let committed_before = if dict_eligible {
-            Some(self.diff.diff_committed.clone())
-        } else {
-            None
-        };
-        let prev_before = if dict_eligible {
-            Some(self.diff.prev_rendered.clone())
-        } else {
-            None
-        };
+        let override_now = dict_eligible && crate::tables::is_english_override(&self.diff.word_raw);
+        let committed_before = override_now.then(|| self.diff.diff_committed.clone());
+        let prev_before = override_now.then(|| self.diff.prev_rendered.clone());
         let (bs, _suffix) = self.feed_diff_core(ch);
 
         // English dictionary override (per-keystroke): if the full word
@@ -88,7 +73,14 @@ impl Diffable for UltraFastViEngine {
         // maintained in parallel — if the user continues typing past the
         // dictionary word (e.g. "characters"), the override stops firing
         // and the Vietnamese transform is shown again.
-        if dict_eligible && crate::tables::is_english_override(&self.diff.word_raw) {
+        //
+        // The post-core re-check mirrors the original semantics: the
+        // full-buffer path inside feed_diff_core can clear `word_raw`, in
+        // which case the override must not fire even though the pre-check
+        // matched. Whenever the post-check holds, the pre-check held too,
+        // so the captured baselines above are present.
+        if override_now && dict_eligible && crate::tables::is_english_override(&self.diff.word_raw)
+        {
             let committed_before = committed_before.unwrap();
             let prev_before = prev_before.unwrap();
             // Build full on-screen text BEFORE this keystroke (the baseline

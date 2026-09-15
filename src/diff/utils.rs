@@ -11,31 +11,40 @@ impl UltraFastViEngine {
     /// Returns `(backspaces, suffix_len)`. The caller sends `backspaces`
     /// delete keys then types the `suffix` chars to transform `prev` → `new`.
     pub(crate) fn diff_into(prev: &str, new: &str, out: &mut OutBuffer) -> (usize, usize) {
-        // Single-pass: count common prefix and track prev char count
-        // simultaneously, avoiding the double `.chars().count()` iteration.
+        // Byte-level common prefix first (UTF-8 is self-synchronizing: the
+        // byte prefix can only end mid-char when the chars at that position
+        // differ, so backing up over continuation bytes lands on the true
+        // common char boundary). This avoids char-iterator overhead for the
+        // dominant prefix scan.
+        let pb = prev.as_bytes();
+        let nb = new.as_bytes();
+        let max = pb.len().min(nb.len());
+        let mut common_bytes = 0usize;
+        while common_bytes < max && pb[common_bytes] == nb[common_bytes] {
+            common_bytes += 1;
+        }
+        // Back up to a char boundary (a differing multi-byte char can share
+        // its lead byte with the previous char's tail). If the whole of
+        // `prev` was consumed, its end is already a char boundary.
+        while common_bytes > 0 && common_bytes < pb.len() && pb[common_bytes] & 0xC0 == 0x80 {
+            common_bytes -= 1;
+        }
+
+        // Count prev chars: common-prefix chars + the rest, in one byte scan
+        // (a char starts at every non-continuation byte).
         let mut common = 0usize;
         let mut prev_count = 0usize;
-        let mut prev_iter = prev.chars();
-        let mut new_iter = new.chars();
-        loop {
-            let p = prev_iter.next();
-            if p.is_some() {
+        for (i, &b) in pb.iter().enumerate() {
+            if b & 0xC0 != 0x80 {
                 prev_count += 1;
+                if i < common_bytes {
+                    common += 1;
+                }
             }
-            match (p, new_iter.next()) {
-                (Some(a), Some(b)) if a == b => common += 1,
-                _ => break,
-            }
-        }
-        // Count remaining prev chars (after the common prefix)
-        for _ in prev_iter {
-            prev_count += 1;
         }
         let backspaces = prev_count - common;
         out.clear();
-        for c in new.chars().skip(common) {
-            let _ = out.push(c);
-        }
+        let _ = out.push_str(&new[common_bytes..]);
         (backspaces, out.len())
     }
 

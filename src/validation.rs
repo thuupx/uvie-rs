@@ -16,6 +16,8 @@ use crate::tables::{
 /// Syllable validation and structural analysis.
 pub(crate) trait SyllableValidator {
     fn is_valid_vietnamese(&self) -> bool;
+    /// Uncached validity computation (the cache lives in `is_valid_vietnamese`).
+    fn compute_validity(&self) -> bool;
     fn partition_syllable(&self) -> (usize, usize, usize, usize);
     /// Compute partition from scratch (uncached).
     fn compute_partition(&self) -> (usize, usize, usize, usize);
@@ -31,6 +33,30 @@ pub(crate) trait SyllableValidator {
 impl SyllableValidator for UltraFastViEngine {
     #[inline]
     fn is_valid_vietnamese(&self) -> bool {
+        // Version-keyed cache: this check runs several times per keystroke
+        // (render + tone-candidate checks) against the same buffer state.
+        // Every buf mutation bumps `version` (see SylBuf), and the check
+        // reads only buf-derived state plus the two config inputs below,
+        // so (version, method, relaxed) fully keys the result.
+        let version = self.buf.version();
+        let tag = self.input_method as u8 | ((self.enable_relaxed_coda as u8) << 2);
+        let cached = self.cached_validity;
+        if cached.0 == version && cached.1 == tag {
+            return cached.2;
+        }
+        let valid = self.compute_validity();
+        // SAFETY: same aliasing argument as `partition_syllable` — the cache
+        // is only written here, under &self, and the version/tag check
+        // ensures stale entries are never returned.
+        let this = self as *const Self as *mut Self;
+        unsafe {
+            (*this).cached_validity = (version, tag, valid);
+        }
+        valid
+    }
+
+    #[inline]
+    fn compute_validity(&self) -> bool {
         let n = self.buf.len();
         if n == 0 {
             return true;
