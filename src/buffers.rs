@@ -196,14 +196,26 @@ impl<const N: usize> StackStr<N> {
     }
 
     /// Push a `&str` as UTF-8 bytes. Returns `false` if the buffer is full.
+    ///
+    /// Copies in fixed 8-byte chunks so small payloads (composing renders,
+    /// ~5-30 bytes) stay inlined instead of emitting a `memmove` call.
     #[inline]
     pub fn push_str(&mut self, s: &str) -> bool {
         let s_bytes = s.as_bytes();
-        if self.len + s_bytes.len() > N {
+        let sl = s_bytes.len();
+        if self.len + sl > N {
             return false;
         }
-        self.bytes[self.len..self.len + s_bytes.len()].copy_from_slice(s_bytes);
-        self.len += s_bytes.len();
+        let mut k = 0usize;
+        while k + 8 <= sl {
+            self.bytes[self.len + k..self.len + k + 8].copy_from_slice(&s_bytes[k..k + 8]);
+            k += 8;
+        }
+        while k < sl {
+            self.bytes[self.len + k] = s_bytes[k];
+            k += 1;
+        }
+        self.len += sl;
         true
     }
 

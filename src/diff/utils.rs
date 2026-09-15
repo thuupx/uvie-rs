@@ -67,19 +67,29 @@ impl UltraFastViEngine {
     }
 
     /// Returns true if the composed output equals the raw input (no Vietnamese transforms).
+    ///
+    /// `raw` holds raw keystrokes, which are always ASCII, so a byte-length
+    /// mismatch immediately rules out passthrough (any Vietnamese render is
+    /// longer in bytes). Only the equal-length case falls through to a
+    /// byte compare — no char-iterator overhead on either path.
     #[inline]
     pub(crate) fn is_raw_passthrough_slice(raw: &[char], composed: &str) -> bool {
         if raw.is_empty() {
             return true;
         }
-        let mut ci = composed.chars();
-        for &r in raw {
-            match ci.next() {
-                Some(c) if c == r => {}
-                _ => return false,
+        let nb = composed.as_bytes();
+        if nb.len() != raw.len() {
+            // raw is pure ASCII, so equal char counts imply equal byte counts
+            // for a passthrough render — a longer/shorter byte length means
+            // at least one multi-byte (Vietnamese) char: not passthrough.
+            return false;
+        }
+        for (i, &r) in raw.iter().enumerate() {
+            if nb[i] != r as u8 {
+                return false;
             }
         }
-        ci.next().is_none()
+        true
     }
 
     /// Find the V-C-V split point: index in raw_chars where the second syllable starts.

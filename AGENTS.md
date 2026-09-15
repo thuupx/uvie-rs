@@ -55,22 +55,47 @@ Hot-path optimization guided by `sample` profiles of a `feed_diff` loop
    (UTF-8 self-synchronizing; back up to the char boundary on a mid-char
    mismatch) instead of char iterators; suffix pushed with one `push_str`.
 
-Results (same machine/settings as the baseline lock):
-
-| Scenario | Before | After | Δ |
-|---|---|---|---|
-| compound_word/nghieengs | 1046 ns | 640 ns | **-39%** |
-| worst_case_deep_syllable/dduwowcj | 924 ns | 544 ns | **-39%** |
-| mixed_typing/viet_english | 10.24 µs | 7.27 µs | **-29%** |
-| rapid_backspace_burst/burst | 1055 ns | 698 ns | **-34%** |
-| random_keystroke_sequence/seeded_32 | 4.19 µs | 3.30 µs | **-19%** |
-| english_passthrough/ghost | 330 ns | 279 ns | -16% |
-| feed/legacy | 603 ns | 252 ns | **-58%** |
-
 vs `bamboo-core` 0.3.24 (same machine/harness): worst_case_deep_syllable and
 backspace_burst are now FASTER than bamboo; compound_word 1.7x, mixed 1.2x,
 random 2.2x, passthrough 1.8x still behind (bamboo's JIT-DFA does less work
 per keystroke by design — uvie runs full validation + render + diff per key).
+
+### Performance round 5 (2026-09, core-engine pipeline)
+
+Second profile-guided pass (same method). Changes:
+
+1. **`is_raw_passthrough_slice` byte-based** (`src/diff/utils.rs`): raw
+   keystrokes are always ASCII, so a byte-length mismatch immediately rules
+   out passthrough — every Vietnamese render is rejected in O(1) instead of
+   a char-iterator walk. Only the equal-length (true passthrough) case does
+   a byte compare.
+2. **`push_str` chunked inline copy**: fixed 8-byte chunks replace the
+   `copy_from_slice` → `memmove` call for the ~5-30-byte renders pushed
+   3-4× per keystroke. memmove samples 268 → 150.
+3. **Clippy**: `copy_active_from` carries
+   `#[allow(clippy::too_many_arguments)]` (mirrors the live-state layout).
+
+Results (cumulative vs the pre-round-4 baseline):
+
+| Scenario | Baseline | Now | Δ |
+|---|---|---|---|
+| compound_word/nghieengs | 1046 ns | 604 ns | **-42%** |
+| worst_case_deep_syllable/dduwowcj | 924 ns | 518 ns | **-44%** |
+| mixed_typing/viet_english | 10.24 µs | 6.76 µs | **-34%** |
+| rapid_backspace_burst/burst | 1055 ns | 690 ns | **-35%** |
+| random_keystroke_sequence/seeded_32 | 4.19 µs | 3.13 µs | **-25%** |
+| english_passthrough/ghost | 330 ns | 264 ns | -20% |
+| feed/legacy | 603 ns | 240 ns | **-60%** |
+
+vs `bamboo-core` 0.3.24 (same machine/harness): worst_case_deep_syllable
+(520 vs 581 ns) and backspace_burst (679 vs 973 ns) are FASTER than bamboo;
+mixed_typing is at parity (6.81 vs 6.22 µs); compound_word 1.7x,
+random 2.1x, passthrough 1.8x still behind — the remaining gap is the
+pipeline's intrinsic logic (`feed_diff_core` + `feed_diff` +
+`render_out_buf` ≈ 44% of samples): bamboo's JIT-DFA does less work per
+keystroke by design, while uvie runs full validation + render + diff per
+key. Further gains need structural work (incremental partition, render
+caching), not micro-optimization.
 
 
 ## Architecture

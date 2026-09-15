@@ -28,6 +28,7 @@ impl ComposingSnapshot {
     /// so a snapshot push moves ~len bytes instead of the full ~800-byte
     /// fixed-size struct. Slot reuse keeps this allocation-free.
     #[inline]
+    #[allow(clippy::too_many_arguments)] // mirrors the live-state field layout
     fn copy_active_from(
         &mut self,
         buf: &SylBuf,
