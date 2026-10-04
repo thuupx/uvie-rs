@@ -93,10 +93,31 @@ impl UltraFastViEngine {
             return 0;
         }
         if last_old_vowel < new_vowel_pos {
-            let first_cons_after_vowel = (last_old_vowel + 1..new_vowel_pos)
+            let run_start = (last_old_vowel + 1..new_vowel_pos)
                 .find(|&i| !Self::is_ascii_vowel(raw[i] as u8))
                 .unwrap_or(new_vowel_pos);
-            return first_cons_after_vowel;
+            // The consonant run may contain keys that were consumed as
+            // tone/modifier marks on the first syllable ("neefbo": 'f' is
+            // huyền on "nè", not an onset). The syllable boundary is the
+            // longest suffix of the run that is a legal Vietnamese onset —
+            // digraphs like "tr"/"ng" stay together, a stray tone key is
+            // left in syllable 1.
+            let run = &raw[run_start..new_vowel_pos];
+            if run.len() > 1 {
+                for take in (1..=run.len()).rev() {
+                    let tail = &run[run.len() - take..];
+                    let mut onset_raw = [0u8; 4];
+                    let mut k = 0usize;
+                    for &c in tail.iter().take(4) {
+                        onset_raw[k] = c as u8;
+                        k += 1;
+                    }
+                    if crate::tables::is_legal_onset(&onset_raw[..k]) {
+                        return new_vowel_pos - take;
+                    }
+                }
+            }
+            return run_start;
         }
         0
     }

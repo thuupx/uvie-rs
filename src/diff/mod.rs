@@ -29,9 +29,23 @@ pub trait Diffable {
     /// is the host's caret distance (screen chars) back to the end of the
     /// newest committed word; it must exactly match a word-end boundary in
     /// the ring (0 = newest word, then + rendered_len + 1 per older word).
-    /// Returns None when there is no matching boundary, no committed word,
-    /// `ch` is a word boundary, or the engine is composing.
-    fn edit_at_caret_diff(&mut self, caret_back: usize, ch: char) -> Option<(usize, &str)>;
+    /// A caret strictly inside a word fires a mid-word edit: the keystroke
+    /// sequence is split at the position that produced the on-screen prefix
+    /// ending at/before the caret, `ch` is inserted there, and the whole
+    /// word is re-rendered through the live pipeline.
+    /// Returns (backspaces, forward_deletes, suffix): backspaces erase the
+    /// word's prefix part left of the caret, forward_deletes erase the old
+    /// tail right of the caret, and the suffix inserts the full re-rendered
+    /// word — the caret lands at the edited word's end. `forward_deletes`
+    /// is 0 for word-end boundary edits (no tail to rewrite).
+    /// Returns None when there is no matching boundary or interior, no
+    /// committed word, `ch` is a word boundary, or the engine is composing.
+    fn edit_at_caret_diff(&mut self, caret_back: usize, ch: char) -> Option<(usize, usize, &str)>;
+
+    /// Mid-word caret edit helper for `edit_at_caret_diff`: `step` is the
+    /// committed-ring index (0 = newest), `chars_before` the rendered chars
+    /// of that word left of the caret.
+    fn edit_mid_word(&mut self, step: usize, chars_before: usize, ch: char) -> Option<(usize, usize, &str)>;
 }
 
 impl Diffable for UltraFastViEngine {
@@ -369,7 +383,7 @@ impl Diffable for UltraFastViEngine {
         (0, &self.diff.diff_suffix)
     }
 
-    fn edit_at_caret_diff(&mut self, caret_back: usize, ch: char) -> Option<(usize, &str)> {
+    fn edit_at_caret_diff(&mut self, caret_back: usize, ch: char) -> Option<(usize, usize, &str)> {
         // Word boundaries are commits, not edits — the host routes them to
         // commit_diff. Editing also only applies when idle (nothing composing).
         if Self::is_word_boundary(ch) || self.is_composing_diff() {
@@ -388,6 +402,7 @@ impl Diffable for UltraFastViEngine {
         let ring_len = self.diff.edit_history.len();
         let mut boundary = 0usize;
         let mut target_step = None;
+        let mut midword: Option<(usize, usize)> = None;
         for step in 0..len {
             if caret_back == boundary {
                 target_step = Some(step);
@@ -395,7 +410,17 @@ impl Diffable for UltraFastViEngine {
             }
             let idx = (self.diff.edit_history_start + len - 1 - step) % ring_len;
             let entry = self.diff.edit_history[idx].as_ref()?;
-            boundary += entry.rendered.chars().count() + 1;
+            let rlen = entry.rendered.chars().count();
+            // Caret strictly inside this word: (boundary, boundary + rlen).
+            // `chars_before` = rendered chars of this word left of the caret.
+            if caret_back > boundary && caret_back < boundary + rlen {
+                midword = Some((step, boundary + rlen - caret_back));
+                break;
+            }
+            boundary += rlen + 1;
+        }
+        if let Some((step, chars_before)) = midword {
+            return self.edit_mid_word(step, chars_before, ch);
         }
         let step = target_step?;
         let target_idx = (self.diff.edit_history_start + len - 1 - step) % ring_len;
@@ -438,7 +463,137 @@ impl Diffable for UltraFastViEngine {
         let _ = full.push_str(&self.diff.prev_rendered);
 
         let (bs, _) = Self::diff_into(&entry.rendered, &full, &mut self.diff.diff_suffix);
-        Some((bs, &self.diff.diff_suffix))
+        Some((bs, 0, &self.diff.diff_suffix))
+    }
+
+    /// Mid-word caret edit: the caret sits strictly inside committed word
+    /// `step` (0 = newest), `chars_before` rendered chars left of the caret.
+    /// The stored raw keystrokes are split at the keystroke that produced
+    /// the on-screen prefix ending at/before the caret, `ch` is inserted
+    /// there, and the extended sequence is replayed through feed_diff so
+    /// tone placement, V-C-V splits and the English override all behave
+    /// exactly as if the word had been typed that way. Returns
+    /// (backspaces = chars_before, forward_deletes = word tail,
+    /// suffix = full new render) so the host can rewrite the whole word
+    /// and land the caret at its end.
+    fn edit_mid_word(&mut self, step: usize, chars_before: usize, ch: char) -> Option<(usize, usize, &str)> {
+        let len = self.diff.edit_history_len;
+        let ring_len = self.diff.edit_history.len();
+        let target_idx = (self.diff.edit_history_start + len - 1 - step) % ring_len;
+        let entry = self.diff.edit_history[target_idx].as_ref()?;
+        if entry.raw.is_full() {
+            return None;
+        }
+
+        // Keystroke→screen mapping: replay the raw word on a scratch engine
+        // with identical settings and record the on-screen prefix after
+        // each key. The split is the last keystroke whose rendered prefix
+        // is preserved verbatim in the committed render and ends at or
+        // before the caret.
+        let mut scratch = UltraFastViEngine::new();
+        scratch.set_input_method(self.input_method());
+        scratch.set_modern_orthography(self.modern_orthography());
+        scratch.set_quick_start(self.quick_start());
+        scratch.set_quick_telex(self.quick_telex());
+        scratch.set_relaxed_coda(self.relaxed_coda());
+        scratch.set_english_override(self.english_override());
+        let rendered: Vec<char> = entry.rendered.chars().collect();
+        let mut screen = String::new();
+        let mut split = 0usize;
+        // Syllable spans: a V-C-V split commits the first syllable — the
+        // jump in `diff_committed` marks a rendered boundary, and the
+        // post-split `key_log` is exactly the new syllable's raw, so the
+        // raw boundary is (keys so far) - key_log.len().
+        let mut boundaries = [(0usize, 0usize); 8];
+        let mut nb = 0usize;
+        let mut last_cl = 0usize;
+        for (i, &c) in entry.raw.iter().enumerate() {
+            let (bs, suffix) = scratch.feed_diff(c);
+            for _ in 0..bs {
+                screen.pop();
+            }
+            screen.push_str(suffix);
+            let cl = scratch.diff.diff_committed.chars().count();
+            if cl > last_cl && nb < boundaries.len() {
+                boundaries[nb] = ((i + 1).saturating_sub(scratch.diff.key_log.len()), cl);
+                nb += 1;
+                last_cl = cl;
+            }
+            let plen = screen.chars().count();
+            if plen <= chars_before
+                && screen
+                    .chars()
+                    .zip(rendered.iter())
+                    .all(|(a, &b)| a == b)
+            {
+                split = i + 1;
+            }
+        }
+
+        // Tone/modifier keys act on the syllable the caret sits in, not at
+        // the keystroke position — inserting 's' mid-coda ("vies|t") can't
+        // apply the tone. Snap them to the end of that syllable's raw run
+        // so "viet" + caret in "vie" + 's' replays "viets" → "viết".
+        // 'd' stays a caret-split literal (it doubles as a normal onset).
+        let cl = self.mode.classify[ch as usize];
+        let syllable_key = cl & crate::modes::IS_TONE_KEY != 0
+            || (cl & crate::modes::IS_MODIFIER != 0 && ch != 'd');
+        let insert_at = if syllable_key {
+            // First span whose rendered end reaches the caret owns it
+            // (caret at a syllable boundary tones the preceding syllable).
+            let mut at = entry.raw.len();
+            for &(raw_b, rend_b) in boundaries.iter().take(nb) {
+                if chars_before <= rend_b {
+                    at = raw_b;
+                    break;
+                }
+            }
+            at
+        } else if split == 0 {
+            // No keystroke boundary maps to the caret region (the very
+            // first transform rewrote the prefix) — decline rather than
+            // insert at a wrong position.
+            return None;
+        } else {
+            split
+        };
+
+        // Take the target word plus every NEWER entry out of the ring —
+        // same geometry invalidation as the boundary edit.
+        let entry = self.diff.edit_history[target_idx].take()?;
+        let mut older: [Option<CommittedWord>; 8] = [const { None }; 8];
+        for i in 0..len - 1 - step {
+            let idx = (self.diff.edit_history_start + i) % ring_len;
+            older[i] = self.diff.edit_history[idx].take();
+        }
+        self.diff.edit_history_start = 0;
+        self.diff.edit_history_len = 0;
+
+        let mut new_raw = crate::buffers::CharVec::<24>::new();
+        for &c in entry.raw.iter().take(insert_at) {
+            let _ = new_raw.try_push(c);
+        }
+        let _ = new_raw.try_push(ch);
+        for &c in entry.raw.iter().skip(insert_at) {
+            let _ = new_raw.try_push(c);
+        }
+        self.reset_diff();
+        for &c in new_raw.iter() {
+            let _ = self.feed_diff(c);
+        }
+
+        for w in older.into_iter().flatten() {
+            self.diff.push_committed(w.raw, w.rendered);
+        }
+
+        let mut full = crate::buffers::new_out_buffer();
+        let _ = full.push_str(&self.diff.diff_committed);
+        let _ = full.push_str(&self.diff.prev_rendered);
+
+        let tail = entry.rendered.chars().count() - chars_before;
+        self.diff.diff_suffix.clear();
+        let _ = self.diff.diff_suffix.push_str(&full);
+        Some((chars_before, tail, &self.diff.diff_suffix))
     }
 
     fn reset_diff(&mut self) {

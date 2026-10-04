@@ -63,15 +63,20 @@ size_t uvie_engine_commit(UvieEngine *engine, char *out_buf, size_t out_len);
  * `caret_back` is the caret distance (screen chars) back to the end of the
  * newest committed word; it must exactly match a word-end boundary in the
  * engine's committed-word history (0 = newest word, + rendered_len + 1 per
- * older word).
- * Returns backspaces + 1 when handled (suffix written into `out_buf`),
- * 0 when there is no matching boundary or `ch` is a word boundary.
+ * older word) or land strictly inside a committed word (mid-word edit).
+ * Returns backspaces + 1 when handled (suffix written into `out_buf`,
+ * `out_fwd_del` set to the number of forward-delete chars the host must
+ * send — 0 for word-end edits, the old word's tail length for mid-word
+ * edits), 0 when there is no match or `ch` is a word boundary.
+ * `out_fwd_del` may be NULL (forward-delete count discarded; callers that
+ * cannot forward-delete should not rely on mid-word edits firing).
  */
 size_t uvie_engine_edit_at(UvieEngine *engine,
                            size_t caret_back,
                            char ch,
                            char *out_buf,
-                           size_t out_len);
+                           size_t out_len,
+                           size_t *out_fwd_del);
 
 /**
  * Reset all engine state (composing + committed + diff tracking).

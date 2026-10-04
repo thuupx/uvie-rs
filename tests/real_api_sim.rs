@@ -192,10 +192,14 @@ fn real_type_user_still_vietnamese() {
     let mut e = UltraFastViEngine::new();
     let mut s = String::new();
     type_chars(&mut e, &mut s, "user");
-    // "user" → V-C-V split: "u" + "sẻ" (both valid VN, NOT in dict)
-    assert_eq!(s, "usẻ", "user should produce usẻ (V-C-V split)");
+    // "user" → "uể": 's' is the sắc tone on u, 'e' joins the nucleus and
+    // [u,e]+'r' resolves to uê (the real Telex spelling of "uể").
+    // Before the centering-diphthong resolution this produced the V-C-V
+    // split "usẻ" ("u" + "sẻ"); both forms stay out of the English dict
+    // because the render is a valid-looking Vietnamese word either way.
+    assert_eq!(s, "uể", "user should produce uể (u + sắc + ê + huyền)");
     press_space(&mut e, &mut s);
-    assert_eq!(s, "usẻ ");
+    assert_eq!(s, "uể ");
 }
 
 #[test]

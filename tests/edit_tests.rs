@@ -83,12 +83,26 @@ impl Screen {
         self.anchor.saturating_sub(self.caret)
     }
 
+    /// Apply a (backspaces, forward_deletes, suffix) edit at the caret:
+    /// erase `bs` chars left of the caret and `fwd_del` chars right of it,
+    /// then insert `out`.
+    fn apply_edit(&mut self, bs: usize, fwd_del: usize, out: &str) {
+        let kept = self.caret.saturating_sub(bs);
+        let head: String = self.text.chars().take(kept).collect();
+        let tail: String = self.text.chars().skip(self.caret + fwd_del).collect();
+        self.text = format!("{head}{out}{tail}");
+        self.caret = kept + out.chars().count();
+        if self.anchor < self.caret {
+            self.anchor = self.caret;
+        }
+    }
+
     /// Re-enter a committed word with `ch` appended to its raw keystrokes.
     /// `caret_back` must land exactly on the target word's end boundary.
     fn edit_at(&mut self, caret_back: usize, ch: char) -> Option<String> {
-        let (bs, out) = self.engine.edit_at_caret_diff(caret_back, ch)?;
+        let (bs, fwd_del, out) = self.engine.edit_at_caret_diff(caret_back, ch)?;
         let out = out.to_string();
-        self.apply(bs, &out);
+        self.apply_edit(bs, fwd_del, &out);
         // The anchor moves to the edited word's end, which is where the
         // caret now sits (the engine is composing it).
         self.anchor = self.caret;
@@ -328,4 +342,104 @@ fn ring_eviction_keeps_newest_editable() {
         edited.ends_with(&fresh),
         "{edited:?} must end with {fresh:?}"
     );
+}
+
+// ------------------------------------------------------------------
+// Mid-word caret editing
+// ------------------------------------------------------------------
+
+#[test]
+fn mid_word_tone_edit_newest_word() {
+    let mut s = Screen::new(true);
+    s.commit_word("viet");
+    // Arrow left twice: caret lands inside "viet" after "vie"
+    // (caret_back 1 → 3 rendered chars before the caret).
+    s.arrow_left();
+    s.arrow_left();
+    let edited = s.edit_at(s.caret_back(), 's').expect("mid-word edit handled");
+    assert_eq!(edited, "viết ");
+}
+
+#[test]
+fn mid_word_tone_edit_older_word() {
+    let mut s = Screen::new(true);
+    s.commit_word("toa");
+    s.commit_word("ngan");
+    // 7 arrows: "toa " is 4 chars + "ngan" 4 → caret lands inside "toa"
+    // after "to" (caret_back 6; "toa" end boundary is 5).
+    for _ in 0..7 {
+        s.arrow_left();
+    }
+    let cb = s.caret_back();
+    let edited = s.edit_at(cb, 'f').expect("mid-word edit on older word");
+    assert_eq!(edited, "toà ngan ");
+}
+
+#[test]
+fn mid_word_edit_word_start_declines() {
+    // Caret before the word's first char is a space/word junction, not a
+    // mid-word position: no edit may fire.
+    let mut s = Screen::new(true);
+    s.commit_word("viet");
+    for _ in 0..5 {
+        s.arrow_left();
+    }
+    assert_eq!(s.caret_back(), 4);
+    assert!(s.edit_at(s.caret_back(), 's').is_none());
+}
+
+#[test]
+fn mid_word_literal_insert() {
+    // A non-tone key inserts at the caret's keystroke position.
+    let mut s = Screen::new(true);
+    s.commit_word("vit");
+    // Caret after "vi" (caret_back 1 inside "vit"): insert 'e'.
+    for _ in 0..2 {
+        s.arrow_left();
+    }
+    let edited = s.edit_at(s.caret_back(), 'e').expect("mid-word edit handled");
+    assert_eq!(edited, "viet ");
+}
+
+#[test]
+fn mid_word_tone_older_syllable_of_vcv_word() {
+    // V-C-V word "neebo" → "nêbo" (splits into "nê"+"bo").
+    let mut s = Screen::new(true);
+    s.commit_word("neebo");
+    // Caret after "nê" (caret_back 2 → 2 rendered chars before the caret):
+    // 'f' snaps to the END of the first syllable's raw run — inserting at
+    // the caret split would produce "neef" mid-coda instead of "nè".
+    for _ in 0..3 {
+        s.arrow_left();
+    }
+    let edited = s
+        .edit_at(s.caret_back(), 'f')
+        .expect("mid-word tone on first syllable");
+    assert_eq!(edited, "nềbo ");
+}
+
+#[test]
+fn mid_word_tone_last_syllable_of_vcv_word() {
+    // Same word; caret inside "bo" (after "nêb") → tone the LAST syllable.
+    let mut s = Screen::new(true);
+    s.commit_word("neebo");
+    for _ in 0..2 {
+        s.arrow_left();
+    }
+    let edited = s
+        .edit_at(s.caret_back(), 'f')
+        .expect("mid-word tone on last syllable");
+    assert_eq!(edited, "nêbò ");
+}
+
+#[test]
+fn mid_word_edit_composing_declined() {
+    // Engine composing (not idle) → no edit, matching the existing gate.
+    let mut s = Screen::new(true);
+    s.commit_word("viet");
+    for _ in 0..3 {
+        s.arrow_left();
+    }
+    s.feed('x');
+    assert!(s.edit_at(1, 's').is_none());
 }

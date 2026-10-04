@@ -33,10 +33,18 @@ The engine has two APIs:
   - The host tracks the caret distance (`caret_back`, screen chars) back to
     the end of the newest committed word. The engine walks its committed-word
     ring (cap 8, each entry = raw + rendered) accumulating
-    `rendered_len + 1` boundary char per older word; the edit fires only
-    when `caret_back` EXACTLY matches a word-end boundary (0 = newest word).
-    Off-boundary carets (mid-word, double spaces, unseen caret jumps)
-    return None — the host feeds the key normally.
+    `rendered_len + 1` boundary char per older word; the edit fires when
+    `caret_back` EXACTLY matches a word-end boundary (0 = newest word) or
+    lands strictly inside a word (mid-word edit). Unmatched carets (word
+    start, double spaces, unseen caret jumps) return None — the host feeds
+    the key normally.
+  - Returns `(backspaces, forward_deletes, suffix)`. Word-end edits get
+    `forward_deletes = 0` and `suffix` = the diffed tail; mid-word edits
+    rewrite the whole word: `backspaces` = rendered chars left of the
+    caret, `forward_deletes` = the old word's tail (chars right of the
+    caret — the host must remove them first), and `suffix` = the full
+    re-rendered word, posted after the deletions. The caret ends at the
+    edited word's end.
   - On a match: the target word AND all newer entries are popped (their
     anchor geometry is stale once the target is re-entered); older entries
     survive and stay editable. The extended raw is re-rendered from scratch
@@ -44,6 +52,13 @@ The engine has two APIs:
     rebuilding composing state, V-C-V splits, the English override and the
     snapshot stack exactly as fresh typing would), then diffs
     old-rendered → new render.
+  - Mid-word placement (`edit_mid_word`): the entry's raw is replayed on a
+    scratch engine to recover each V-C-V syllable boundary and rendered
+    span. Tone/modifier keys apply at the END of the caret's syllable raw
+    (UniKey semantics: 's' inside "viet" → "viết"); literal keys insert at
+    the caret's exact position inside the word raw. Edits at the word's
+    first raw key, keys that would only expand an already-resolved
+    nucleus, and positions the replay can't place all decline.
   - After a successful edit the engine is COMPOSING the edited word, so
     backspace walks it back like normal composing and the next space
     re-records it. The host re-anchors its caret offset to 0.
@@ -213,6 +228,38 @@ Tests: `tests/orthography_tests.rs` (hiatus, passthrough, locked V-C-V).
 Updated locked expectations in `bugfix_tests.rs` (`keeo`→passthrough),
 `vcv_tests.rs` (`auw`→`au`), `word_boundary_tests.rs` (`dauw`→`dau`).
 
+### Accuracy Improvement (2026-10): centering-diphthong post-coda tones + onset-exact V-C-V
+UniKey/EVKey accept a tone key after the coda of a centering-rhyme word —
+`tiens`→`tiến`, `viets`→`viết`, `tiengs`→`tiếng`, `tuans`→`tuấn`,
+`hues`→`huế`, `kieux`→`kiễu`, `duocs`→`duốc` — but the engine previously
+kept the key literal because the plain nucleus (`ie`, `ye`, `ue`, `ua`,
+`eu`, and the triphthongs `ieu`, `yeu`, `uye`, `uoi`, `uay`, `ueu`) was
+never legal in `is_valid_vietnamese`. Three pieces, mirroring the /uə/
+(`resolve_uo_rhyme_tone`) and -ech precedents:
+
+1. **Transient plain nuclei** (`src/tables/nucleus.rs`): the plain-vowel
+   forms are legal nuclei, with `rhyme_coda_compatible` rows that only
+   accept codas real words take (ie/ye→m n ng p t c; ue→m n nh p t ch c;
+   ua→m n ng t c). An OPEN `ie`/`ye` nucleus stays INVALID in
+   `is_valid_vietnamese` — iê/yê are always-closed written rhymes, so an
+   open vowel pair can never take a tone key (`iej` stays literal;
+   "tiens"→"tiến" is the only useful reading).
+2. **`resolve_centering_rhyme_tone`** (`src/tone_handler.rs`, called from
+   `apply_coda_tone_rule` before the modern-orthography early return):
+   a toned plain centering nucleus resolves to the written circumflex
+   form — ie/ye/ue/ua→ê at index 1, eu→ê at 0, ieu/yeu/uye/uoi/uay/ueu
+   per the written accent — only when the nucleus has no horn/circumflex
+   already (explicit `iee`/`woo` spellings are untouched).
+3. **Onset-exact `find_split_point`** (`src/diff/utils.rs`): the V-C-V
+   boundary is now the longest suffix of the consonant run that is a
+   legal Vietnamese onset, not the run's first consonant. A tone key
+   consumed mid-word stays inside syllable 1 (`neefbo`→`nềbo` was
+   `nêfbo`); digraph onsets (`tr`, `ng`, `gh`) still travel together.
+   Trade-off: sequences like `afghan` now render `àgha` mid-word (the
+   'f' resolves as a tone on 'a' + `gh` onset) — an accepted loss since
+   f/j/w/z are never Vietnamese consonants, and the dictionary override
+   (regenerated to 15,416 words) restores them on completion.
+
 ### Accuracy Improvement (2026-08)
 Onset↔nucleus distribution check (`onset_nucleus_compatible` in
 `src/tables/onset.rs`). Vietnamese has a hard complementary distribution
@@ -238,7 +285,7 @@ Vietnamese (`befe`→`bề`, `sầm` via `safam`). Restricting it regresses 851
 Telex pairs. A dictionary-based check is the only clean fix.
 
 ### English Dictionary Override (2026-08, expanded 2026-10)
-`src/tables/english.rs` — 9,179 common English words that produce garbled
+`src/tables/english.rs` — 15,416 common English words that produce garbled
 Vietnamese+English hybrids (e.g. `character`→`chẩcter`, `safari`→`sầri`,
 `good`→`gôd`, `book`→`bôk`). Sorted static `&[&str]` array with O(log n)
 binary search — zero heap, zero dependencies, `no_std`-compatible.
@@ -292,8 +339,9 @@ clears composing state.
 **Excluded** from the dictionary:
 - Words whose transform is a real Vietnamese word (from 22k word list):
   `chaos`→`cháo`, `most`→`mót`, `boots`→`bốt`, `deeds`→`đế`
-- Words whose V-C-V split components are both valid Vietnamese words:
-  `user`→`u`+`sẻ`, `banana`→`bân`+`na`
+- Words whose V-C-V split components are all valid Vietnamese words:
+  `banana`→`bân`+`na`, or whose whole render is a real word (`user`→`uể`
+  — 's' is sắc on u, 'e' joins the uê nucleus, 'r' is huyền)
 
 Backspace in override state: after the override, the English word is in
 `diff_committed` and `prev_rendered` is empty. Backspace pops from
@@ -303,7 +351,7 @@ Backspace in override state: after the override, the English word is in
 Performance: the per-keystroke clones (`committed_before`, `prev_before`)
 are gated by `word_raw.len() >= 4` (minimum dictionary word length),
 so the common path (1-3 chars typed) has zero overhead. The dictionary
-binary search is O(log 9179) ≈ 13 comparisons. Benchmarks show no
+binary search is O(log 15670) ≈ 14 comparisons. Benchmarks show no
 significant change on short benchmarks, -1.3% to -1.7% improvement on
 sentence benchmarks, and -6.8% to -8.1% improvement on backspace
 benchmarks (the old backspace override check is now dead code).

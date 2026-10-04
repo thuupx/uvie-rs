@@ -100,9 +100,36 @@ fn main() {
     }
 
     let en_data = include_str!("/Users/devin/repos/uvie-rs/tests/data/english_100k.txt");
+
+    // Prefix-shadow drop: a dictionary word that is a prefix of a real
+    // Telex keystroke sequence fires the per-keystroke override mid-word
+    // and hijacks Vietnamese typing ("tojo" prefixes "tojot" → "tột").
+    // Rare English loses to Vietnamese intent; common English (top ~20k
+    // of the frequency-ordered corpus) wins — the same balance the
+    // curated list struck ("dust", "data").
+    let pairs_data = include_str!("/Users/devin/repos/uvie-rs/tests/data/vietnamese_telex_pairs.txt");
+    let mut pair_inputs: Vec<&str> = pairs_data
+        .lines()
+        .filter_map(|l| l.split('\t').next())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    pair_inputs.sort();
+    let top20k: HashSet<&str> = en_data
+        .lines()
+        .take(20_000)
+        .map(|l| l.trim())
+        .collect();
+    let shadows_pair = |w: &str| -> bool {
+        // First pair input >= w; if it starts with w, w is a prefix.
+        let idx = pair_inputs.partition_point(|p| *p < w);
+        idx < pair_inputs.len() && pair_inputs[idx].starts_with(w)
+    };
+
     let mut dict: Vec<String> = Vec::new();
     let mut n_passthrough = 0;
     let mut n_valid_vi = 0;
+    let mut n_shadowed = 0;
     for line in en_data.lines() {
         let word = line.trim();
         if word.len() < 4 || !word.chars().all(|c| c.is_ascii_lowercase()) { continue; }
@@ -114,11 +141,12 @@ fn main() {
         let lw_render: String = rendered.chars().map(|c| c.to_ascii_lowercase()).collect();
         let mut memo = HashMap::new();
         if valid_vi(&lw_render, &words, &mut memo) { n_valid_vi += 1; continue; }
+        if shadows_pair(word) && !top20k.contains(word) { n_shadowed += 1; continue; }
         dict.push(word.to_string());
     }
     dict.sort();
     dict.dedup();
-    println!("passthrough: {}, valid-vi(excluded): {}, dict: {}", n_passthrough, n_valid_vi, dict.len());
+    println!("passthrough: {}, valid-vi(excluded): {}, shadowed: {}, dict: {}", n_passthrough, n_valid_vi, n_shadowed, dict.len());
     use std::io::Write;
     let mut f = std::fs::File::create("/tmp/new_dict.txt").unwrap();
     for w in &dict { writeln!(f, "    \"{}\",", w).unwrap(); }
