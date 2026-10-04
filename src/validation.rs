@@ -90,6 +90,13 @@ impl SyllableValidator for UltraFastViEngine {
         {
             return false;
         }
+        // Transient plain [i,e]/[y,e] nuclei only exist while closed: iê/yê
+        // are always-closed written rhymes, so an OPEN "ie"/"ye" can never
+        // take a tone key ("iej" stays literal) — "tiens" → "tiến" is the
+        // only useful reading.
+        if coda_slice.is_empty() && matches!(nuc_slice, ['i', 'e'] | ['y', 'e']) {
+            return false;
+        }
         if !is_legal_coda(coda_slice, self.enable_relaxed_coda) {
             return false;
         }

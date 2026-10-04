@@ -71,11 +71,12 @@ mod word_boundary_punctuation_tests {
     fn at_sign_boundary() {
         let mut e = UltraFastViEngine::new();
         e.set_modern_orthography(true);
-        // `user` gets V-C-V split into `u` + `sẻ` (both valid VN syllables),
-        // then `@` boundary, then `hoas` → `hoá`. This is correct engine behaviour:
-        // `user` is excluded from the English dictionary because its V-C-V
-        // split components are both valid Vietnamese words.
-        assert_eq!(type_diff(&mut e, "user@hoas"), "usẻ@hoá");
+        // `user` renders `uể` — 's' is the sắc tone on u, 'e' joins the
+        // nucleus and [u,e]+'r' resolves to uê (the real Telex spelling).
+        // Then `@` boundary, then `hoas` → `hoá`. `user` stays excluded
+        // from the English dictionary: the render is a valid-looking
+        // Vietnamese word either way.
+        assert_eq!(type_diff(&mut e, "user@hoas"), "uể@hoá");
     }
 
     #[test]

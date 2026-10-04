@@ -174,6 +174,15 @@ pub extern "C" fn uvie_engine_set_relaxed_coda(engine: *mut UvieEngine, enabled:
     });
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_set_english_override(engine: *mut UvieEngine, enabled: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_engine(engine) {
+            e.set_english_override(enabled != 0);
+        }
+    });
+}
+
 // ===================================================================
 // Diff-based keystroke API
 // ===================================================================
@@ -253,9 +262,13 @@ pub extern "C" fn uvie_engine_commit(
 /// `caret_back` is the caret distance (screen chars) back to the end of the
 /// newest committed word; it must exactly match a word-end boundary in the
 /// engine's committed-word history (0 = newest word, + rendered_len + 1 per
-/// older word).
-/// Returns backspaces + 1 when handled (suffix written into `out_buf`),
-/// 0 when there is no matching boundary or `ch` is a word boundary.
+/// older word) or land strictly inside a committed word (mid-word edit).
+/// Returns backspaces + 1 when handled (suffix written into `out_buf`,
+/// `out_fwd_del` set to the number of forward-delete chars the host must
+/// send — 0 for word-end edits, the old word's tail length for mid-word
+/// edits), 0 when there is no match or `ch` is a word boundary.
+/// `out_fwd_del` may be NULL (forward-delete count discarded; callers that
+/// cannot forward-delete should not rely on mid-word edits firing).
 #[unsafe(no_mangle)]
 pub extern "C" fn uvie_engine_edit_at(
     engine: *mut UvieEngine,
@@ -263,6 +276,7 @@ pub extern "C" fn uvie_engine_edit_at(
     ch: c_char,
     out_buf: *mut c_char,
     out_len: usize,
+    out_fwd_del: *mut usize,
 ) -> usize {
     std::panic::catch_unwind(|| {
         if engine.is_null() || out_buf.is_null() || out_len == 0 {
@@ -272,10 +286,13 @@ pub extern "C" fn uvie_engine_edit_at(
         let Some(mut e) = lock_engine(engine) else {
             return 0;
         };
-        let Some((backspaces, suffix)) = e.edit_at_caret_diff(caret_back, c) else {
+        let Some((backspaces, fwd_del, suffix)) = e.edit_at_caret_diff(caret_back, c) else {
             return 0;
         };
         write_output(suffix, out_buf, out_len);
+        if !out_fwd_del.is_null() {
+            unsafe { *out_fwd_del = fwd_del };
+        }
         backspaces + 1
     })
     .unwrap_or(0)

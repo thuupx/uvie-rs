@@ -41,6 +41,33 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
         seq: &['i', 'ê', 'u'],
         tone_idx: 1,
     }, // iêu
+    // Transient plain-vowel forms: legal so a tone key can apply, then
+    // resolved to the circumflexed nucleus by resolve_centering_rhyme_tone
+    // (UniKey-compatible typing — "kieux" → "kiểu", "quyets" → "quyết").
+    NucleusEntry {
+        seq: &['i', 'e', 'u'],
+        tone_idx: 1,
+    }, // ieu transient → iêu
+    NucleusEntry {
+        seq: &['y', 'e', 'u'],
+        tone_idx: 1,
+    }, // yeu transient → yêu (yếu)
+    NucleusEntry {
+        seq: &['u', 'y', 'e'],
+        tone_idx: 2,
+    }, // uye transient → uyê (quyết)
+    NucleusEntry {
+        seq: &['u', 'o', 'i'],
+        tone_idx: 1,
+    }, // uoi transient → uôi (cuối)
+    NucleusEntry {
+        seq: &['u', 'a', 'y'],
+        tone_idx: 1,
+    }, // uay transient → uây (khuấy)
+    NucleusEntry {
+        seq: &['u', 'e', 'u'],
+        tone_idx: 1,
+    }, // ueu transient → uêu (khểu)
     NucleusEntry {
         seq: &['o', 'a', 'i'],
         tone_idx: 1,
@@ -160,6 +187,25 @@ static NUCLEUS_TABLE: &[NucleusEntry] = &[
         seq: &['y', 'ê'],
         tone_idx: 1,
     }, // yê (huyền → tone on ê)
+    // Transient plain-vowel centering diphthongs (resolve to iê/yê/uê/uâ
+    // on tone): "tiens" → "tiến", "quyens" → "quyến", "hues" → "huế",
+    // "tuans" → "tuấn", "deux" → "đều".
+    NucleusEntry {
+        seq: &['i', 'e'],
+        tone_idx: 1,
+    }, // ie transient → iê
+    NucleusEntry {
+        seq: &['y', 'e'],
+        tone_idx: 1,
+    }, // ye transient → yê
+    NucleusEntry {
+        seq: &['u', 'e'],
+        tone_idx: 1,
+    }, // ue transient → uê
+    NucleusEntry {
+        seq: &['e', 'u'],
+        tone_idx: 0,
+    }, // eu transient → êu (tone on ê, index 0)
     NucleusEntry {
         seq: &['u', 'a'],
         tone_idx: 0,
@@ -449,6 +495,13 @@ pub fn rhyme_coda_compatible(nucleus: &[char], coda: &[u8], relaxed: bool) -> bo
         // /uə/ rhyme (thuốc, muốn, buông) — transient plain-o form; the toned
         // form resolves to ['u','ô'] via apply_coda_tone_rule.
         ['u', 'o'] => matches!(class, M | N | Ng | T | C),
+        // Transient plain-vowel centering diphthongs — same coda sets as
+        // their resolved forms so a tone key can apply mid-word:
+        // "tiens" → "tiến", "quyens" → "quyến", "khuens" → "khuên",
+        // "tuans" → "tuấn".
+        ['i', 'e'] | ['y', 'e'] => matches!(class, M | N | Ng | P | T | C),
+        ['u', 'e'] => matches!(class, M | N | Nh | P | T | Ch | C),
+        ['u', 'a'] => matches!(class, M | N | Ng | T | C),
         // /uə/ open (thuở) is written with the horn; closed takes uô.
         ['u', 'ơ'] => false,
         // oo engine extension (boóng, choòng) — keep fully permissive.

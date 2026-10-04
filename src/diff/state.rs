@@ -73,6 +73,15 @@ pub struct DiffState {
     /// instead of O(n) replay. Cleared on word boundary, commit, V-C-V split.
     pub snapshots: [Option<ComposingSnapshot>; 24],
     pub snapshot_count: usize,
+    /// Sticky English passthrough: set when the per-keystroke dictionary
+    /// override fires. While set, the rest of the current word passes
+    /// through raw — the suffix must not be re-transformed as Vietnamese
+    /// (e.g. "perm"+"ission" would render "permision": the double-s
+    /// cancel eats a letter and tone keys corrupt the tail). The raw tail
+    /// accumulates in `prev_rendered`, keeping the on-screen invariant
+    /// (diff_committed + prev_rendered) and the boundary commit path intact.
+    /// Cleared on word boundary, commit, reset, and full-word erase.
+    pub english_sticky: bool,
     /// Committed-word ring (oldest → newest), for post-commit editing.
     /// Only the newest entry is used by `edit_newest_diff`; the rest are
     /// kept for future multi-word-back editing. Cleared on commit-adjacent
@@ -107,6 +116,7 @@ impl DiffState {
             scratch_display: OutBuffer::new(),
             snapshots: [const { None }; 24],
             snapshot_count: 0,
+            english_sticky: false,
             edit_history: [const { None }; 8],
             edit_history_start: 0,
             edit_history_len: 0,
@@ -131,6 +141,7 @@ impl DiffState {
             *s = None;
         }
         self.snapshot_count = 0;
+        self.english_sticky = false;
         // Clear committed-word history
         for w in &mut self.edit_history {
             *w = None;

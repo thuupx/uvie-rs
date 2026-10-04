@@ -13,6 +13,7 @@ pub(crate) trait ToneHandler {
     fn apply_coda_tone_rule(&mut self);
     fn resolve_uo_rhyme_tone(&mut self);
     fn resolve_ech_rhyme_tone(&mut self);
+    fn resolve_centering_rhyme_tone(&mut self);
 }
 
 impl ToneHandler for UltraFastViEngine {
@@ -277,6 +278,14 @@ impl ToneHandler for UltraFastViEngine {
         // the circumflex ("lechj" → "lệch", "kechs" → "ếch" — the -ech rhyme
         // is always written "êch" when toned).
         self.resolve_ech_rhyme_tone();
+        // Centering-diphthong resolution: plain-vowel nuclei whose written
+        // form needs a circumflex on the centering vowel — [i,e]/[y,e]→iê/yê
+        // ("tiens" → "tiến", "quyens" → "quyến"), [u,e]→uê ("hues" → "huế",
+        // "khuechs" → "khuếch"), [u,a]→uâ ("tuans" → "tuấn" — closed only,
+        // open "ua" stays), [e,u]→êu ("deux" → "đều"), and the plain
+        // triphthongs ("kieux" → "kiểu", "quyets" → "quyết",
+        // "cuois" → "cuối", "khuays" → "khuấy").
+        self.resolve_centering_rhyme_tone();
 
         if self.enable_modern_orthography {
             return; // Modern mode already places tone on second vowel.
@@ -426,6 +435,92 @@ impl ToneHandler for UltraFastViEngine {
         }
         let s = self.buf.get_mut(nucleus_start);
         s.flags |= F_CIRCUMFLEX;
+        s.recompute_out();
+    }
+
+    /// Centering-diphthong resolution: a plain-vowel nucleus carrying a tone
+    /// resolves its centering vowel to the circumflexed written form, exactly
+    /// as if the user had typed the doubled vowel ("tien" + 's' ≡ "tieen" +
+    /// 's'). Without this, the tone key falls back to a literal consonant for
+    /// the most common Vietnamese rhymes typed the UniKey way: iên, iêng,
+    /// iêt, yên, uân, uê, êu, iêu, yêu, uyê, uôi, uây, uêu.
+    ///
+    /// The resolving vowel and whether a consonant coda is required:
+    ///   - `[i,e]` / `[y,e]` → ê on the second vowel — open or closed
+    ///     ("tiến", "quyến"; an open "viế" is not a written word but stays
+    ///     consistent with the resolved interpretation).
+    ///   - `[u,e]` → ê — open or closed ("huế", "khuếch").
+    ///   - `[u,a]` → â — closed only; open "ua" is a legitimate plain
+    ///     diphthong ("múa" must not become "muâ").
+    ///   - `[e,u]` → ê on the first vowel — êu is always open ("đều").
+    ///   - Triphthongs: `[i,e,u]`/`[y,e,u]` → ê on the middle vowel
+    ///     ("kiểu", "yếu"), `[u,y,e]` → ê on the last ("quyết"),
+    ///     `[u,o,i]` → ô on the middle ("cuối"), `[u,a,y]`/`[u,e,u]` → â/ê
+    ///     on the middle ("khuấy", "khểu") — all open.
+    ///
+    /// Runs at render time so both keystroke orders resolve ("tiens" and
+    /// "tiesn" alike), and never fires without a tone in the nucleus — an
+    /// untoned "tien" keeps rendering literally.
+    #[inline]
+    fn resolve_centering_rhyme_tone(&mut self) {
+        let n = self.buf.len();
+        if n < 2 {
+            return;
+        }
+        let (_, nucleus_start, nucleus_end, coda_start) = self.partition_syllable();
+        let nuc_len = nucleus_end - nucleus_start;
+        if nuc_len < 2 || nuc_len > 3 {
+            return;
+        }
+        let closed = coda_start < n;
+        let v0 = self.buf.get(nucleus_start).base;
+        let v1 = self.buf.get(nucleus_start + 1).base;
+        let v2 = if nuc_len == 3 {
+            self.buf.get(nucleus_start + 2).base
+        } else {
+            0
+        };
+        // `target` = the nucleus index that takes the circumflex + tone.
+        let target: usize = match (v0, v1, v2) {
+            (b'i' | b'y', b'e', 0) => 1,
+            (b'u', b'e', 0) => 1,
+            (b'u', b'a', 0) if closed => 1,
+            (b'e', b'u', 0) => 0,
+            (b'i' | b'y', b'e', b'u') => 1,
+            (b'u', b'y', b'e') => 2,
+            (b'u', b'o', b'i') | (b'u', b'a', b'y') | (b'u', b'e', b'u') => 1,
+            _ => return,
+        };
+        // All nucleus vowels must still be plain — a horn or circumflex
+        // already present means the nucleus resolved earlier or is a
+        // different rhyme entirely.
+        for i in nucleus_start..nucleus_end {
+            if self.buf.get(i).flags & (F_HORN | F_CIRCUMFLEX) != 0 {
+                return;
+            }
+        }
+        // A tone must be set on one of the nucleus vowels.
+        let mut tone = None;
+        for i in nucleus_start..nucleus_end {
+            let s = self.buf.get(i);
+            if s.flags & F_TONE_SET != 0 {
+                tone = Some((s.tone, i));
+                break;
+            }
+        }
+        let Some((tone_val, from_idx)) = tone else {
+            return;
+        };
+        let target_idx = nucleus_start + target;
+        if from_idx != target_idx {
+            let s = self.buf.get_mut(from_idx);
+            s.flags &= !F_TONE_SET;
+            s.tone = 0;
+            s.recompute_out();
+        }
+        let s = self.buf.get_mut(target_idx);
+        s.flags |= F_CIRCUMFLEX | F_TONE_SET;
+        s.tone = tone_val;
         s.recompute_out();
     }
 }

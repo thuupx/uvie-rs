@@ -279,7 +279,10 @@ fn diff_english_blob() {
 
 #[test]
 fn diff_double_tone_cancel() {
-    assert_diff("tess", "tes");
+    assert_diff("vess", "ves");
+    // "tess" is an English override word: the dictionary fires before the
+    // double-tone cancel can render "tes", so the raw word stays on screen.
+    assert_diff("tess", "tess");
     assert_diff("teff", "tef");
 }
 
@@ -302,4 +305,100 @@ fn diff_dd_cancel() {
 fn diff_ww_cancel() {
     assert_diff("ww", "w");
     assert_diff("wwork", "work");
+}
+
+// ------------------------------------------------------------------
+// Sticky English passthrough (prefix override + raw tail)
+// ------------------------------------------------------------------
+
+/// Type `input`, then press backspace `bs_count` times. Returns the screen.
+fn diff_type_backspace(input: &str, bs_count: usize) -> String {
+    let mut engine = UltraFastViEngine::new();
+    engine.set_modern_orthography(true);
+    let mut screen = String::new();
+    for ch in input.chars() {
+        let (bs, suffix) = engine.feed_diff(ch);
+        apply_diff(&mut screen, bs, suffix);
+    }
+    for _ in 0..bs_count {
+        let (bs, suffix) = engine.backspace_diff();
+        apply_diff(&mut screen, bs, suffix);
+    }
+    screen
+}
+
+#[test]
+fn diff_sticky_prefix_override_tail_raw() {
+    // "perm" fires the dictionary override mid-word; the tail must pass
+    // through raw instead of re-transforming as Vietnamese (which produced
+    // "permision" — the double-s cancel ate a letter).
+    assert_diff("permission", "permission");
+    // "syst" fires; without sticky the tail "ems" rendered "ém" → "systém".
+    assert_diff("systems", "systems");
+    // "afric" fires; tail "ans" would render "án" → "africán".
+    assert_diff("africans", "africans");
+    // Word-boundary commit after sticky keeps the raw word.
+    assert_diff("permissions today", "permissions today");
+}
+
+#[test]
+fn diff_sticky_backspace_walk() {
+    // Backspace pops the raw tail first, then the committed prefix, one
+    // char at a time.
+    assert_eq!(diff_type_backspace("permission", 3), "permiss");
+    assert_eq!(diff_type_backspace("permission", 6), "perm");
+    assert_eq!(diff_type_backspace("permission", 10), "");
+    // Partial erase then retype stays in passthrough.
+    let mut engine = UltraFastViEngine::new();
+    engine.set_modern_orthography(true);
+    let mut screen = String::new();
+    for ch in "permx".chars() {
+        let (bs, suffix) = engine.feed_diff(ch);
+        apply_diff(&mut screen, bs, suffix);
+    }
+    let (bs, suffix) = engine.backspace_diff();
+    apply_diff(&mut screen, bs, suffix);
+    for ch in "its".chars() {
+        let (bs, suffix) = engine.feed_diff(ch);
+        apply_diff(&mut screen, bs, suffix);
+    }
+    assert_eq!(screen, "permits");
+}
+
+#[test]
+fn diff_sticky_full_erase_restores_vietnamese() {
+    // Erasing the whole word (tail + prefix) leaves sticky mode: fresh
+    // typing is Vietnamese again.
+    let mut engine = UltraFastViEngine::new();
+    engine.set_modern_orthography(true);
+    let mut screen = String::new();
+    for ch in "permission".chars() {
+        let (bs, suffix) = engine.feed_diff(ch);
+        apply_diff(&mut screen, bs, suffix);
+    }
+    assert_eq!(screen, "permission");
+    for _ in 0..10 {
+        let (bs, suffix) = engine.backspace_diff();
+        apply_diff(&mut screen, bs, suffix);
+    }
+    assert_eq!(screen, "");
+    for ch in "vieetj".chars() {
+        let (bs, suffix) = engine.feed_diff(ch);
+        apply_diff(&mut screen, bs, suffix);
+    }
+    assert_eq!(screen, "việt");
+}
+
+#[test]
+fn diff_english_override_disabled() {
+    // With the override off, dict words transform like any input.
+    let mut engine = UltraFastViEngine::new();
+    engine.set_modern_orthography(true);
+    engine.set_english_override(false);
+    let mut screen = String::new();
+    for ch in "good".chars() {
+        let (bs, suffix) = engine.feed_diff(ch);
+        apply_diff(&mut screen, bs, suffix);
+    }
+    assert_eq!(screen, "gôd");
 }

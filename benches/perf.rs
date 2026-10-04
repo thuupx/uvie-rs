@@ -61,10 +61,14 @@ fn bench_random_keystroke_sequence(c: &mut Criterion) {
     let mut group = c.benchmark_group("random_keystroke_sequence");
     let seq: String = random_keystrokes(32) + " ";
     group.throughput(Throughput::Elements(seq.chars().count() as u64));
-    group.bench_with_input(BenchmarkId::from_parameter("seeded_32"), &seq, |b, input| {
-        let mut e = telex_engine();
-        b.iter(|| type_seq_diff(&mut e, input));
-    });
+    group.bench_with_input(
+        BenchmarkId::from_parameter("seeded_32"),
+        &seq,
+        |b, input| {
+            let mut e = telex_engine();
+            b.iter(|| type_seq_diff(&mut e, input));
+        },
+    );
     group.finish();
 }
 
@@ -88,10 +92,14 @@ fn bench_mixed_typing(c: &mut Criterion) {
     let seq = "Hello Tooi ddang gox Tieengs Vieejt baengs boox gox UVieKey, \
                character safari good book clear free ";
     group.throughput(Throughput::Elements(seq.chars().count() as u64));
-    group.bench_with_input(BenchmarkId::from_parameter("viet_english"), &seq, |b, input| {
-        let mut e = telex_engine();
-        b.iter(|| type_seq_diff(&mut e, input));
-    });
+    group.bench_with_input(
+        BenchmarkId::from_parameter("viet_english"),
+        &seq,
+        |b, input| {
+            let mut e = telex_engine();
+            b.iter(|| type_seq_diff(&mut e, input));
+        },
+    );
     group.finish();
 }
 
