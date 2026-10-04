@@ -24,7 +24,9 @@ fn main() {
     // first-4 chars to prune.
     let mut shadowed: Vec<(String, Vec<String>)> = Vec::new();
     for w in &dict {
-        if w.len() < 4 { continue; }
+        if w.len() < 4 {
+            continue;
+        }
         let mut hits: Vec<String> = Vec::new();
         for inp in &inputs {
             if inp.len() >= w.len() && inp.starts_with(w.as_str()) {

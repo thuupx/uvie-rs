@@ -45,7 +45,12 @@ pub trait Diffable {
     /// Mid-word caret edit helper for `edit_at_caret_diff`: `step` is the
     /// committed-ring index (0 = newest), `chars_before` the rendered chars
     /// of that word left of the caret.
-    fn edit_mid_word(&mut self, step: usize, chars_before: usize, ch: char) -> Option<(usize, usize, &str)>;
+    fn edit_mid_word(
+        &mut self,
+        step: usize,
+        chars_before: usize,
+        ch: char,
+    ) -> Option<(usize, usize, &str)>;
 }
 
 impl Diffable for UltraFastViEngine {
@@ -476,7 +481,12 @@ impl Diffable for UltraFastViEngine {
     /// (backspaces = chars_before, forward_deletes = word tail,
     /// suffix = full new render) so the host can rewrite the whole word
     /// and land the caret at its end.
-    fn edit_mid_word(&mut self, step: usize, chars_before: usize, ch: char) -> Option<(usize, usize, &str)> {
+    fn edit_mid_word(
+        &mut self,
+        step: usize,
+        chars_before: usize,
+        ch: char,
+    ) -> Option<(usize, usize, &str)> {
         let len = self.diff.edit_history_len;
         let ring_len = self.diff.edit_history.len();
         let target_idx = (self.diff.edit_history_start + len - 1 - step) % ring_len;
@@ -520,12 +530,7 @@ impl Diffable for UltraFastViEngine {
                 last_cl = cl;
             }
             let plen = screen.chars().count();
-            if plen <= chars_before
-                && screen
-                    .chars()
-                    .zip(rendered.iter())
-                    .all(|(a, &b)| a == b)
-            {
+            if plen <= chars_before && screen.chars().zip(rendered.iter()).all(|(a, &b)| a == b) {
                 split = i + 1;
             }
         }

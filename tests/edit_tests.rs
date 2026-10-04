@@ -356,7 +356,9 @@ fn mid_word_tone_edit_newest_word() {
     // (caret_back 1 → 3 rendered chars before the caret).
     s.arrow_left();
     s.arrow_left();
-    let edited = s.edit_at(s.caret_back(), 's').expect("mid-word edit handled");
+    let edited = s
+        .edit_at(s.caret_back(), 's')
+        .expect("mid-word edit handled");
     assert_eq!(edited, "viết ");
 }
 
@@ -397,7 +399,9 @@ fn mid_word_literal_insert() {
     for _ in 0..2 {
         s.arrow_left();
     }
-    let edited = s.edit_at(s.caret_back(), 'e').expect("mid-word edit handled");
+    let edited = s
+        .edit_at(s.caret_back(), 'e')
+        .expect("mid-word edit handled");
     assert_eq!(edited, "viet ");
 }
 
