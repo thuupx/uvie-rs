@@ -4,13 +4,16 @@ Ultra-fast Vietnamese input method engine (Telex, VNI) written in Rust.
 
 A `no_std` / `no-alloc` compatible library with **zero external dependencies**. Designed for sub-microsecond latency per keystroke through incremental state updates, positive syllable validation, and 100% stack-allocated hot paths.
 
-**macOS implementation**: See [UVieKey](https://github.com/thuupx/UVieKey) for the macOS menu bar app that uses this engine.
+**macOS implementation**: See [UVieMac](https://github.com/uvie-project/uvie-mac) for the macOS menu bar app that uses this engine.
 
 ## Features
 
 - **Telex & VNI**: Full support for both popular input methods.
 - **Modern orthography**: Optional tone placement per new standard (e.g. `hoas` → `hoá`).
 - **Relaxed coda mode**: Optional lenient coda validation for flexible typing.
+- **Post-coda tone keys on centering diphthongs** (UniKey-compatible): `viets` → `viết`, `tiens` → `tiến`, `hues` → `huế`, `kieux` → `kiễu` — the tone key applies after the coda and the render resolves to the written circumflex form.
+- **Committed-word editing** (LabanKey-style): `edit_at` re-enters any of the last 8 committed words — at the word-end boundary or a caret strictly inside the word — and returns `(backspaces, forward_deletes, suffix)` so the host can re-render it in place.
+- **English override dictionary**: a ~15k-word table keeps English words literal (`permission`, `system`), with sticky passthrough so the rest of an overridden word stays raw. Words that would shadow real Telex sequences (e.g. `tojo` before `tojot` → `tột`) are filtered out.
 - **Per-character state**: Each keystroke gets its own state entry; transforms are bit-flips, not multi-pass reordering.
 - **Validate raw keystrokes**: Checks raw ASCII sequence against positive syllable tables before any transform. English passthrough is automatic.
 - **Diff-based API**: Returns `(backspace_count, suffix_to_type)` per keystroke for minimal screen updates.
@@ -46,10 +49,11 @@ engine.commit();
 The library compiles to `staticlib` and `cdylib`. The C API provides:
 
 - `uvie_engine_new()` / `uvie_engine_free()`
-- `uvie_feed(engine, key, &backspace_count, suffix, suffix_len)`
-- `uvie_backspace(engine, &backspace_count, suffix, suffix_len)`
-- `uvie_set_mode(engine, method)`
-- Configuration toggles (modern orthography, etc.)
+- `uvie_engine_feed(engine, ch, out_buf, out_len)` — returns `backspaces + 1`
+- `uvie_engine_backspace(engine, out_buf, out_len)` / `uvie_engine_commit(...)`
+- `uvie_engine_edit_at(engine, caret_back, ch, out_buf, out_len, out_fwd_del)` — committed-word edit; `out_fwd_del` reports the forward-deletes a mid-word edit needs
+- `uvie_engine_raw_chars(engine, out_buf, out_len)` / `uvie_engine_current_output(...)` — raw typed keys vs rendered form (Escape-restore)
+- `uvie_engine_set_input_method(engine, method)` + configuration toggles (`uvie_engine_set_modern_orthography`, `uvie_engine_set_english_override`, …)
 
 See [`src/ffi.rs`](src/ffi.rs) for the full C API.
 
