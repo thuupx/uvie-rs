@@ -46,6 +46,23 @@ impl Diffable for UltraFastViEngine {
             return self.feed_diff_core(ch);
         }
 
+        // Sticky English passthrough: the dictionary override already fired
+        // for a prefix of this word, so the word is English input — the rest
+        // of it must pass through raw. Re-transforming the suffix as
+        // Vietnamese produced hybrids like "perm"+"ission" → "permision"
+        // (double-s cancel eats a letter) and "syst"+"ems" → "systém".
+        // The tail accumulates in prev_rendered so the screen invariant
+        // (diff_committed + prev_rendered) and the boundary commit path
+        // stay intact; key_log stays empty so backspace falls through to
+        // the committed-prefix pop path.
+        if self.diff.english_sticky {
+            let _ = self.diff.word_raw.try_push(ch);
+            let _ = self.diff.prev_rendered.push(ch);
+            self.diff.diff_suffix.clear();
+            let _ = self.diff.diff_suffix.push(ch);
+            return (0, &self.diff.diff_suffix);
+        }
+
         // Push snapshot of state BEFORE this keystroke (for O(1) backspace).
         // This captures the state that backspace should restore to.
         self.diff.push_snapshot(ComposingSnapshot {
@@ -88,7 +105,10 @@ impl Diffable for UltraFastViEngine {
         // maintained in parallel — if the user continues typing past the
         // dictionary word (e.g. "characters"), the override stops firing
         // and the Vietnamese transform is shown again.
-        if dict_eligible && crate::tables::is_english_override(&self.diff.word_raw) {
+        if dict_eligible
+            && self.enable_english_override
+            && crate::tables::is_english_override(&self.diff.word_raw)
+        {
             let committed_before = committed_before.unwrap();
             let prev_before = prev_before.unwrap();
             // Build full on-screen text BEFORE this keystroke (the baseline
@@ -137,6 +157,9 @@ impl Diffable for UltraFastViEngine {
                 *s = None;
             }
             self.diff.snapshot_count = 0;
+            // Further same-word chars pass through raw — the committed
+            // prefix signals English intent for the rest of the word.
+            self.diff.english_sticky = true;
             return (bs2, &self.diff.diff_suffix);
         }
 
@@ -166,7 +189,18 @@ impl Diffable for UltraFastViEngine {
         // Fast check: if prev_rendered contains any non-ASCII chars, it's
         // Vietnamese (not override state). This avoids the dict lookup and
         // String allocation on the common backspace path.
-        if self.diff.word_raw.len() >= 4
+        // Sticky passthrough: prev_rendered holds the raw tail typed after
+        // the fired dictionary prefix — pop it char by char. Once empty,
+        // the empty-key_log path below pops the committed prefix itself.
+        if self.diff.english_sticky && !self.diff.prev_rendered.is_empty() {
+            self.diff.prev_rendered.pop();
+            self.diff.word_raw.pop();
+            self.diff.diff_suffix.clear();
+            return (1, &self.diff.diff_suffix);
+        }
+
+        if self.enable_english_override
+            && self.diff.word_raw.len() >= 4
             && self.diff.prev_rendered.is_ascii()
             && crate::tables::is_english_override(&self.diff.word_raw)
         {
@@ -199,6 +233,11 @@ impl Diffable for UltraFastViEngine {
                 // word_raw and the dict check would fail.
                 self.diff.word_raw.pop();
                 self.diff.diff_suffix.clear();
+                // The whole word was erased — leave sticky passthrough so
+                // fresh typing is Vietnamese again.
+                if self.diff.word_raw.is_empty() {
+                    self.diff.english_sticky = false;
+                }
                 return (1, &self.diff.diff_suffix);
             }
             self.diff.diff_suffix.clear();
@@ -249,7 +288,9 @@ impl Diffable for UltraFastViEngine {
         // English word, replace the Vietnamese transform with the raw English
         // word. The diff engine computes the backspaces needed to transform
         // what's on screen (diff_committed + prev_rendered) into the raw word.
-        if !self.diff.word_raw.is_empty() && crate::tables::is_english_override(&self.diff.word_raw)
+        if self.enable_english_override
+            && !self.diff.word_raw.is_empty()
+            && crate::tables::is_english_override(&self.diff.word_raw)
         {
             // Build full on-screen text (Vietnamese) in a stack buffer.
             let mut full_screen = crate::buffers::new_out_buffer();
@@ -314,6 +355,7 @@ impl Diffable for UltraFastViEngine {
         // the following word as ghost characters and corrupts macro matching.
         self.diff.diff_committed.clear();
         self.diff.diff_suffix.clear();
+        self.diff.english_sticky = false;
         // Clear the snapshot stack — stale snapshots from the committed word
         // must not survive, otherwise a backspace after commit would restore
         // state from the previous word, corrupting the engine.

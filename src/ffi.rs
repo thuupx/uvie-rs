@@ -174,6 +174,15 @@ pub extern "C" fn uvie_engine_set_relaxed_coda(engine: *mut UvieEngine, enabled:
     });
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn uvie_engine_set_english_override(engine: *mut UvieEngine, enabled: c_int) {
+    let _ = std::panic::catch_unwind(|| {
+        if let Some(mut e) = lock_engine(engine) {
+            e.set_english_override(enabled != 0);
+        }
+    });
+}
+
 // ===================================================================
 // Diff-based keystroke API
 // ===================================================================

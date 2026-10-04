@@ -345,8 +345,10 @@ fn real_type_good_then_continue_no_ghost() {
     let mut s = String::new();
     // Type char by char and verify no ghost characters at any point
     let chars: Vec<char> = "goodness".chars().collect();
+    // Once the "good" override fires, the rest of the word passes through
+    // raw (sticky English passthrough) — no Vietnamese transform of the tail.
     let expected = [
-        "g", "go", "gô", "good", "goodn", "goodne", "goodné", "goodness",
+        "g", "go", "gô", "good", "goodn", "goodne", "goodnes", "goodness",
     ];
     for (i, ch) in chars.iter().enumerate() {
         let (bs, suffix) = e.feed_diff(*ch);

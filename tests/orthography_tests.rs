@@ -44,11 +44,13 @@ fn no_hyphen_hiatus_commits() {
 
 #[test]
 fn tone_cancel_then_english_word_passthrough() {
-    // "ressearch": double-s cancels the sắc, then the word continues as the
-    // English "research". The V-C-V split must not resurrect the cancelled
-    // tone as a committed "rế" syllable (hiatus split "rế"|"a" is illegal).
+    // "vessarch": double-s cancels the sắc, then the word continues as
+    // English. The V-C-V split must not resurrect the cancelled tone as a
+    // committed "vế" syllable (hiatus split "vế"|"a" is illegal).
+    // ("ressearch" can no longer be the vehicle: "ress" is an English
+    // override word, so the dictionary fires before the cancel.)
     let mut e = UltraFastViEngine::new();
-    assert_eq!(type_diff(&mut e, "ressearch"), "research");
+    assert_eq!(type_diff(&mut e, "vessarch"), "vesarch");
 }
 
 #[test]
@@ -83,7 +85,7 @@ fn locked_vcv_behavior_unchanged() {
         ("neeboo", "nêbô"),
         ("naabo", "nâbo"),
         ("toocaa", "tôcâ"),
-        ("resset", "rết"), // double-s cancel + cross-tone, single syllable
+        ("vesset", "vết"), // double-s cancel + cross-tone, single syllable
         ("befe", "bề"),    // cross-tone circumflex
     ];
     for (input, expected) in cases {

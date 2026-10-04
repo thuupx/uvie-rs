@@ -16,7 +16,8 @@ impl UltraFastViEngine {
             // English dictionary override: if the full word matches a known
             // English word, replace the Vietnamese transform with the raw
             // English word + the boundary char.
-            if !self.diff.word_raw.is_empty()
+            if self.enable_english_override
+                && !self.diff.word_raw.is_empty()
                 && crate::tables::is_english_override(&self.diff.word_raw)
             {
                 // Build full on-screen text (Vietnamese) in a stack buffer.

@@ -28,6 +28,11 @@ pub struct UltraFastViEngine {
     pub(crate) enable_quick_telex: bool,
     pub(crate) enable_modern_orthography: bool,
     pub(crate) enable_relaxed_coda: bool,
+    /// English dictionary override: when a typed word matches the English
+    /// override table, show the raw English word instead of the garbled
+    /// Vietnamese transform. Default on; hosts can expose it as a
+    /// "restore English words" user toggle.
+    pub(crate) enable_english_override: bool,
     /// Simple Telex mode: `w` always applies horn/breve to all vowel
     /// candidates (vneHookAll), with no standalone `w→ư`, no double-w
     /// cancel, and no silent consume. Matches UniKey "Simple Telex".
@@ -62,6 +67,7 @@ impl UltraFastViEngine {
             enable_quick_telex: false,
             enable_modern_orthography: false,
             enable_relaxed_coda: false,
+            enable_english_override: true,
             is_simple_telex: false,
             syl_structure: SylStructure::new(),
             diff: DiffState::new(),
@@ -99,6 +105,13 @@ impl UltraFastViEngine {
     }
     pub fn relaxed_coda(&self) -> bool {
         self.enable_relaxed_coda
+    }
+
+    pub fn set_english_override(&mut self, enabled: bool) {
+        self.enable_english_override = enabled;
+    }
+    pub fn english_override(&self) -> bool {
+        self.enable_english_override
     }
 
     pub fn set_input_method(&mut self, method: InputMethod) {
