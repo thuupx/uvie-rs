@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 fn main() {
-    let pairs = include_str!("/Users/devin/repos/uvie-rs/tests/data/vietnamese_telex_pairs.txt");
+    let pairs = include_str!("../tests/data/vietnamese_telex_pairs.txt");
     let mut inputs: Vec<String> = Vec::new();
     for line in pairs.lines() {
         if let Some(inp) = line.split_whitespace().next() {

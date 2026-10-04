@@ -86,7 +86,7 @@ fn main() {
     // token of the 22k list. The exclusion check is tone-aware: a rendered
     // token only counts as valid Vietnamese if it decomposes into real
     // words, not merely real syllable *shapes*.
-    let vi_data = include_str!("/Users/devin/repos/uvie-rs/tests/data/vietnamese_22k.txt");
+    let vi_data = include_str!("../tests/data/vietnamese_22k.txt");
     let mut words: HashSet<String> = HashSet::new();
     for line in vi_data.lines() {
         for tok in line.split_whitespace() {
@@ -128,7 +128,7 @@ fn main() {
         ok
     }
 
-    let en_data = include_str!("/Users/devin/repos/uvie-rs/tests/data/english_100k.txt");
+    let en_data = include_str!("../tests/data/english_100k.txt");
 
     // Prefix-shadow drop: a dictionary word that is a prefix of a real
     // Telex keystroke sequence fires the per-keystroke override mid-word
@@ -136,8 +136,7 @@ fn main() {
     // Rare English loses to Vietnamese intent; common English (top ~20k
     // of the frequency-ordered corpus) wins — the same balance the
     // curated list struck ("dust", "data").
-    let pairs_data =
-        include_str!("/Users/devin/repos/uvie-rs/tests/data/vietnamese_telex_pairs.txt");
+    let pairs_data = include_str!("../tests/data/vietnamese_telex_pairs.txt");
     let mut pair_inputs: Vec<&str> = pairs_data
         .lines()
         .filter_map(|l| l.split('\t').next())
@@ -196,7 +195,7 @@ fn main() {
         writeln!(f, "    \"{}\",", w).unwrap();
     }
     // Show which current dict words are NOT in new list (regressions to check)
-    let cur: HashSet<String> = include_str!("/Users/devin/repos/uvie-rs/src/tables/english.rs")
+    let cur: HashSet<String> = include_str!("../src/tables/english.rs")
         .lines()
         .filter_map(|l| {
             l.trim()

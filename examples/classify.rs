@@ -19,7 +19,7 @@ fn type_diff(engine: &mut UltraFastViEngine, input: &str) -> String {
 }
 
 fn main() {
-    let data = include_str!("/Users/devin/repos/uvie-rs/tests/data/english_100k.txt");
+    let data = include_str!("../tests/data/english_100k.txt");
     let mut fails: Vec<(String, String)> = Vec::new();
     for line in data.lines() {
         let word = line.trim();
