@@ -145,16 +145,29 @@ fn main() {
         .collect();
     pair_inputs.sort();
     let top20k: HashSet<&str> = en_data.lines().take(20_000).map(|l| l.trim()).collect();
+    // Stricter gate for the doubled-tone-key class: below top ~10k the
+    // cancel mechanics win over the English word.
+    let top10k: HashSet<&str> = en_data.lines().take(10_000).map(|l| l.trim()).collect();
     let shadows_pair = |w: &str| -> bool {
         // First pair input >= w; if it starts with w, w is a prefix.
         let idx = pair_inputs.partition_point(|p| *p < w);
         idx < pair_inputs.len() && pair_inputs[idx].starts_with(w)
+    };
+    // Words ending in a doubled Telex tone key (ss/ff/rr/xx/jj) collide
+    // with the standard double-same-tone-key cancel: UniKey collapses the
+    // pair and restores the raw consonant (cass→cas, timff→timf). Keeping
+    // the word in the dict would steal the only way to type the collapsed
+    // form, so only genuinely common English words earn the protection.
+    let ends_doubled_tone = |w: &str| -> bool {
+        let b = w.as_bytes();
+        b.len() >= 2 && b[b.len() - 1] == b[b.len() - 2] && matches!(b[b.len() - 1], b's' | b'f' | b'r' | b'x' | b'j')
     };
 
     let mut dict: Vec<String> = Vec::new();
     let mut n_passthrough = 0;
     let mut n_valid_vi = 0;
     let mut n_shadowed = 0;
+    let mut n_doubled = 0;
     for line in en_data.lines() {
         let word = line.trim();
         if word.len() < 4 || !word.chars().all(|c| c.is_ascii_lowercase()) {
@@ -178,15 +191,20 @@ fn main() {
             n_shadowed += 1;
             continue;
         }
+        if ends_doubled_tone(word) && !top10k.contains(word) {
+            n_doubled += 1;
+            continue;
+        }
         dict.push(word.to_string());
     }
     dict.sort();
     dict.dedup();
     println!(
-        "passthrough: {}, valid-vi(excluded): {}, shadowed: {}, dict: {}",
+        "passthrough: {}, valid-vi(excluded): {}, shadowed: {}, doubled-tone: {}, dict: {}",
         n_passthrough,
         n_valid_vi,
         n_shadowed,
+        n_doubled,
         dict.len()
     );
     use std::io::Write;
@@ -199,8 +217,9 @@ fn main() {
         .lines()
         .filter_map(|l| {
             l.trim()
+                .trim_end_matches(',')
                 .strip_prefix('"')
-                .and_then(|s| s.strip_suffix("\",\"").or_else(|| s.strip_suffix('"')))
+                .and_then(|s| s.strip_suffix('"'))
         })
         .map(|s| s.trim_end_matches(',').to_string())
         .collect();
