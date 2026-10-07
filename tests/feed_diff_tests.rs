@@ -280,10 +280,14 @@ fn diff_english_blob() {
 #[test]
 fn diff_double_tone_cancel() {
     assert_diff("vess", "ves");
-    // "tess" is an English override word: the dictionary fires before the
-    // double-tone cancel can render "tes", so the raw word stays on screen.
-    assert_diff("tess", "tess");
     assert_diff("teff", "tef");
+    // Words ending in a doubled tone key are only kept in the English
+    // override dict when they are common (top ~10k of the corpus): "pass"
+    // stays literal, but rare "tess" falls through to the standard cancel
+    // and collapses to "tes".
+    assert_diff("pass", "pass");
+    assert_diff("tess", "tes");
+    assert_diff("cass", "cas");
 }
 
 #[test]
