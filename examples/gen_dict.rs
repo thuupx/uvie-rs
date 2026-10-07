@@ -160,7 +160,9 @@ fn main() {
     // form, so only genuinely common English words earn the protection.
     let ends_doubled_tone = |w: &str| -> bool {
         let b = w.as_bytes();
-        b.len() >= 2 && b[b.len() - 1] == b[b.len() - 2] && matches!(b[b.len() - 1], b's' | b'f' | b'r' | b'x' | b'j')
+        b.len() >= 2
+            && b[b.len() - 1] == b[b.len() - 2]
+            && matches!(b[b.len() - 1], b's' | b'f' | b'r' | b'x' | b'j')
     };
 
     let mut dict: Vec<String> = Vec::new();
